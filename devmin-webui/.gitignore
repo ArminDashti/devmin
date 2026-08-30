@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.env
+*.local
+*.exe
+
+# auto-managed large files (>5MB)
+
+# github-commit-push-all: large files (>5MB) — auto-managed
+

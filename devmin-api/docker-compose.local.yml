@@ -1,0 +1,94 @@
+# Local Docker hot-reload: Postgres + Go Air API + Vite WebUI (bind mounts).
+# Usage: docker compose -f docker-compose.local.yml -p devmin up -d --force-recreate
+name: devmin
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: "no"
+    environment:
+      POSTGRES_USER: localapps
+      POSTGRES_PASSWORD: localapps
+      POSTGRES_DB: localapps
+    ports:
+      - "5441:5432"
+    volumes:
+      - devmin-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U localapps -d localapps"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    image: golang:1.25-alpine
+    restart: "no"
+    working_dir: /app
+    environment:
+      HTTP_ADDR: "0.0.0.0:8195"
+      DATABASE_URL: postgres://localapps:localapps@postgres:5432/localapps?sslmode=disable
+      JWT_SECRET: change-me-in-production
+      DEFAULT_USERNAME: armin
+      DEFAULT_PASSWORD: dopadopa123
+      CORS_ORIGINS: http://pc-armin,http://localhost:5181,http://127.0.0.1:5181
+      GITHUB_ROOT: /github
+      DOCKER_STATE_PATH: /cursor-plugins/skills/run-apps-on-local-docker/.run-local-docker-pairs-state.json
+      DOCKER_RUNNER_SCRIPT: /cursor-plugins/skills/run-apps-on-local-docker/scripts/Run-LocalDockerAppPairs.ps1
+      HOST_IP: host.docker.internal
+      GOTOOLCHAIN: auto
+    command:
+      - sh
+      - -c
+      - apk add --no-cache git gcc musl-dev curl && go install github.com/air-verse/air@v1.61.7 && air -c .air.toml
+    volumes:
+      - .:/app
+      - devmin-gomod:/go/pkg/mod
+      - devmin-gotmp:/app/tmp
+      - C:/Users/armin/GitHub:/github:ro
+      - C:/Users/armin/.cursor/plugins/local/devops-by-armin:/cursor-plugins:ro
+    ports:
+      - "8195:8195"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  webui:
+    image: node:22-alpine
+    restart: "no"
+    working_dir: /app
+    environment:
+      CHOKIDAR_USEPOLLING: "true"
+      VITE_BASE_PATH: "/devmin/"
+      VITE_HMR_CLIENT_PORT: "80"
+      WATCHPACK_POLLING: "true"
+      VITE_API_PROXY_TARGET: http://api:8195
+      VITE_DEV_PORT: "5173"
+    command:
+      - sh
+      - -c
+      - npm install && npm run dev -- --host 0.0.0.0 --port 5173 --strictPort
+    volumes:
+      - ../devmin-webui:/app
+      - devmin-webui-node-modules:/app/node_modules
+    ports:
+      - "5181:5173"
+    networks:
+      - default
+      - pc-armin-local
+    depends_on:
+      - api
+
+volumes:
+  devmin-postgres-data:
+  devmin-gomod:
+  devmin-gotmp:
+  devmin-webui-node-modules:
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 10.200.51.0/24
+  pc-armin-local:
+    external: true

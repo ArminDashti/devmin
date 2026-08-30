@@ -1,0 +1,4 @@
+services:
+  webui:
+    ports:
+      - "${PUBLISH_PORT:-5195}:80"

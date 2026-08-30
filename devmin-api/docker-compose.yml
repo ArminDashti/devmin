@@ -1,0 +1,72 @@
+name: devmin
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: devmin-postgres
+    environment:
+      POSTGRES_USER: localapps
+      POSTGRES_PASSWORD: localapps
+      POSTGRES_DB: localapps
+    volumes:
+      - devmin_pgdata:/var/lib/postgresql/data
+    expose:
+      - "5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U localapps -d localapps"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: "no"
+    networks:
+      - app_net
+
+  api:
+    image: ${IMAGE_TAG:-pc-armin/devmin-api:latest}
+    container_name: devmin-api
+    environment:
+      HTTP_ADDR: ":${INTERNAL_PORT:-8195}"
+      DATABASE_URL: postgres://localapps:localapps@postgres:5432/localapps?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      DEFAULT_USERNAME: ${DEFAULT_USERNAME:-armin}
+      DEFAULT_PASSWORD: ${DEFAULT_PASSWORD:-dopadopa123}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://127.0.0.1:5195,http://localhost:5195}
+      GITHUB_ROOT: /github
+      DOCKER_STATE_PATH: /cursor-plugins/skills/run-apps-on-local-docker/.run-local-docker-pairs-state.json
+      DOCKER_RUNNER_SCRIPT: /cursor-plugins/skills/run-apps-on-local-docker/scripts/Run-LocalDockerAppPairs.ps1
+      NATIVE_RUNNER_SCRIPT: /cursor-plugins/skills/run-all-apps-locally/scripts/Run-ListedApps.ps1
+      NATIVE_STATE_PATH: /cursor-plugins/skills/run-all-apps-locally/.run-listed-apps-state.json
+      NATIVE_APPS_CONFIG: /cursor-plugins/skills/run-all-apps-locally/apps.yaml
+      HOST_IP: host.docker.internal
+    expose:
+      - "${INTERNAL_PORT:-8195}"
+    ports:
+      - target: ${INTERNAL_PORT:-8195}
+        published: ${PUBLISH_PORT-8195}
+        protocol: tcp
+    volumes:
+      - C:/Users/armin/GitHub:/github:ro
+      - C:/Users/armin/.cursor/plugins/local/devops-by-armin:/cursor-plugins:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8195/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+    restart: "no"
+    networks:
+      - app_net
+
+networks:
+  app_net:
+    name: ${DOCKER_NETWORK:-t3-net}
+    external: true
+
+volumes:
+  devmin_pgdata:
+    name: devmin_pgdata
