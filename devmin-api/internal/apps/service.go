@@ -62,7 +62,7 @@ func NewService(cfg config.Config, st *store.Store, router *runner.Router) *Serv
 }
 
 func (s *Service) List(ctx context.Context) ([]Row, error) {
-	pairs, err := discover.FindPairs(s.cfg.GitHubRoot)
+	projects, err := discover.FindProjects(s.cfg.GitHubRoot)
 	if err != nil {
 		return nil, err
 	}
@@ -74,18 +74,21 @@ func (s *Service) List(ctx context.Context) ([]Row, error) {
 	if err != nil {
 		return nil, err
 	}
-	projects, err := dockerstate.RunningProjects()
+	projectsMap, err := dockerstate.RunningProjects()
 	if err != nil {
-		projects = map[string]bool{}
+		projectsMap = map[string]bool{}
 	}
 	prefs, err := s.store.ListAppPreferences(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	rows := make([]Row, 0, len(pairs))
-	for _, p := range pairs {
-		row := s.buildRow(p, dockerState, nativeState, projects, prefs)
+	rows := make([]Row, 0, len(projects))
+	for _, proj := range projects {
+		if proj.Pair == nil {
+			continue
+		}
+		row := s.buildRow(*proj.Pair, dockerState, nativeState, projectsMap, prefs)
 		rows = append(rows, row)
 	}
 	return rows, nil
@@ -123,8 +126,8 @@ func (s *Service) buildRow(
 		pref = v
 	} else {
 		// Infer from live state when no DB preference exists.
-		pref.LocalEnabled = nativestate.OnLocal(nativeState, p.Stem)
-		pref.DockerEnabled = dockerstate.OnDocker(p.Stem, p.ApiStack, p.WebUiStack, projects)
+		pref.HotReloadEnabled = nativestate.OnLocal(nativeState, p.Stem)
+		pref.LocalDockerEnabled = dockerstate.OnDocker(p.Stem, p.ApiStack, p.WebUiStack, projects)
 	}
 
 	onDocker := dockerstate.OnDocker(p.Stem, p.ApiStack, p.WebUiStack, projects)
@@ -219,9 +222,9 @@ func (s *Service) buildRow(
 		WebUiApp:          p.WebUiName,
 		ApiInternalPort:   p.ApiInternalPort,
 		WebUiInternalPort: p.WebUiInternalPort,
-		LocalEnabled:      pref.LocalEnabled,
-		DockerEnabled:     pref.DockerEnabled,
-		PublicEnabled:     pref.PublicEnabled,
+		LocalEnabled:      pref.HotReloadEnabled,
+		DockerEnabled:     pref.LocalDockerEnabled,
+		PublicEnabled:     pref.ServerDockerEnabled,
 		LocalApiURL:       localApiURL,
 		LocalWebUiURL:     localWebuiURL,
 		LocalStatus:       localStatus,
@@ -247,46 +250,25 @@ func (s *Service) UpdateApp(ctx context.Context, stem string, req UpdateRequest)
 	mode := *req.RunMode
 	enabled := *req.Enabled
 
-	pairs, err := discover.FindPairs(s.cfg.GitHubRoot)
+	proj, err := discover.FindProjectByStem(s.cfg.GitHubRoot, stem)
 	if err != nil {
 		return err
 	}
-	var pair *discover.Pair
-	for i := range pairs {
-		if pairs[i].Stem == stem {
-			pair = &pairs[i]
-			break
-		}
-	}
-	if pair == nil {
+	if proj == nil || proj.Pair == nil {
 		return fmt.Errorf("app not found: %s", stem)
 	}
+	pair := proj.Pair
 	if mode == runmode.LocalDocker && pair.SkipReason != "" && pair.LocalCompose == "" {
 		return fmt.Errorf("cannot use docker for %s: %s", stem, pair.SkipReason)
 	}
-	if mode == runmode.Server && !pair.HasServerDeploy {
-		return fmt.Errorf("cannot use public for %s: server deploy scripts missing or invalid", stem)
+	if mode == runmode.ServerDocker && !pair.HasServerDeploy {
+		return fmt.Errorf("cannot use server docker for %s: server deploy scripts missing or invalid", stem)
 	}
 	if s.router.IsRunning(stem) {
 		return fmt.Errorf("action already in progress for %s", stem)
 	}
 
-	pref, _, err := s.store.GetAppPreference(ctx, stem)
-	if err != nil {
-		return err
-	}
-	switch mode {
-	case runmode.Local:
-		pref.LocalEnabled = enabled
-	case runmode.LocalDocker:
-		pref.DockerEnabled = enabled
-	case runmode.Server:
-		pref.PublicEnabled = enabled
-	default:
-		return fmt.Errorf("invalid runMode %q", mode)
-	}
-
-	if err := s.store.SetAppPreference(ctx, stem, pref); err != nil {
+	if err := s.store.SetModeEnabled(ctx, stem, mode, enabled); err != nil {
 		return err
 	}
 	if enabled {

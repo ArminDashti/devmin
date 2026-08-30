@@ -9,11 +9,15 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ArminDashti/devmin-api/internal/actions"
 	"github.com/ArminDashti/devmin-api/internal/apps"
 	"github.com/ArminDashti/devmin-api/internal/auth"
 	"github.com/ArminDashti/devmin-api/internal/config"
 	httpserver "github.com/ArminDashti/devmin-api/internal/http"
 	"github.com/ArminDashti/devmin-api/internal/runner"
+	"github.com/ArminDashti/devmin-api/internal/scripts"
+	"github.com/ArminDashti/devmin-api/internal/settings"
+	"github.com/ArminDashti/devmin-api/internal/stacks"
 	"github.com/ArminDashti/devmin-api/internal/store"
 	"github.com/joho/godotenv"
 )
@@ -35,12 +39,22 @@ func main() {
 	}
 
 	flight := runner.NewFlight()
-	native := runner.NewNativeRunner(cfg.NativeRunnerScript, cfg.NativeAppsConfig, cfg.NativeHotReloadScript)
-	docker := runner.NewDockerRunner(cfg.DockerRunnerScript, cfg.GitHubRoot)
-	server := runner.NewServerRunner()
-	router := runner.NewRouter(native, docker, server, flight)
+	hotReload := runner.NewNativeRunner(cfg.NativeRunnerScript, cfg.NativeAppsConfig, cfg.NativeHotReloadScript)
+	localNative := runner.NewNativeRunner(cfg.NativeRunnerScript, cfg.NativeAppsConfig, "")
+	localDocker := runner.NewDockerRunner(cfg.DockerRunnerScript, cfg.GitHubRoot)
+	serverDocker := runner.NewServerRunner()
+	bareServer := runner.NewBareServerRunner()
+	router := runner.NewRouter(hotReload, localNative, localDocker, serverDocker, bareServer, flight)
+
 	appsSvc := apps.NewService(cfg, db, router)
-	srv := httpserver.New(cfg, authSvc, appsSvc)
+	stacksSvc := stacks.NewService(cfg, db)
+	jobMgr := scripts.NewJobManager()
+	invoker := scripts.NewInvoker(jobMgr)
+	resolver := scripts.NewResolver(cfg)
+	actionsSvc := actions.NewService(cfg, db, router, resolver, invoker)
+	settingsSvc := settings.NewService(cfg, db)
+
+	srv := httpserver.New(cfg, authSvc, appsSvc, stacksSvc, actionsSvc, settingsSvc)
 
 	httpServer := &http.Server{
 		Addr:              cfg.HTTPAddr,

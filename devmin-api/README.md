@@ -1,6 +1,6 @@
 # devmin-api
 
-Gin API for discovering local API–WebUI pairs and controlling Docker stacks (inspired by `run-apps-on-local-docker`).
+Gin API for discovering local dev projects and running systematic deploy actions via PowerShell scripts.
 
 ## Run
 
@@ -10,9 +10,7 @@ Gin API for discovering local API–WebUI pairs and controlling Docker stacks (i
 2. Copy `.env.example` → `.env`
 3. `go run ./cmd/server`
 
-### Docker dev (hot reload — Postgres + API + WebUI)
-
-Full-repo bind mounts: Go changes reload via Air; Vue/config/public changes reload via Vite HMR.
+### Docker dev (hot reload)
 
 ```powershell
 docker network create t3-net   # if missing
@@ -22,30 +20,35 @@ docker compose -f docker-compose.local.yml up --build
 - WebUI: http://127.0.0.1:5195/apps
 - API: http://127.0.0.1:8195/health
 
-**Note:** Enable/Disable stack actions require Windows PowerShell and do not work from the Linux API container. Grid listing, auth, and discovery still work (GitHub root and Docker state are read-only mounts).
+**Note:** Deploy actions require Windows PowerShell on the host. Listing and auth work from Linux containers with read-only mounts.
 
 Default login: `armin` / `dopadopa123`
 
-Dev ports: API **8195**, WebUI **5195**, Postgres **5455**
+## API
 
-### Docker prod (Nginx — `pc-armin/devmin`)
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/v1/stacks` | Stacks with applications and endpoints |
+| `GET` | `/api/v1/stacks/:stem` | Stack detail |
+| `GET` | `/api/v1/applications/:appId` | Application detail |
+| `POST` | `/api/v1/actions` | Run action `{ stem?, appId?, channel, action }` |
+| `GET` | `/api/v1/actions/:id` | Poll action job |
+| `GET` | `/api/v1/settings` | Platform settings |
+| `PUT` | `/api/v1/settings` | Update settings |
+| `GET/PATCH` | `/api/v1/projects/:stem/docker-params?target=local\|server` | Docker YAML params |
+| `GET` | `/api/v1/apps` | Legacy grid (backward compatible) |
+| `PATCH` | `/api/v1/apps/:stem` | Legacy enable/disable |
 
-Production-like stack: Postgres + Go API + static WebUI behind Nginx. WebUI proxies `/api` and `/health` to the API container.
+### Channels
 
-```powershell
-docker network create t3-net   # if missing
-docker compose -f docker-compose.prod.yml up --build -d
-```
+- `hotReload` — actions: `enable`, `disable`
+- `localDocker` — `install`, `uninstall`, `update`, `reinstall`
+- `serverDocker` — same
+- `server` — same (uses `.armin/server-scripts/run-on-server.ps1`)
 
-- WebUI (Nginx): http://127.0.0.1:5195/apps
-- Images: `pc-armin/devmin-api:latest`, `pc-armin/devmin-webui:latest`
-- Stack name: `devmin`
+Legacy `runMode` values `local` → `hotReload`, `server` → `serverDocker`.
 
-**Note:** Enable/Disable actions still require Windows PowerShell on the host (API runs Linux in Docker). Grid listing, auth, and discovery work via mounted GitHub + devops plugin paths.
+## Discovery
 
-## Endpoints
-
-- `GET /health`
-- `POST /api/v1/auth/login`
-- `GET /api/v1/apps` — grid data (`stack` = pair stem, `apiApp`, `webuiApp`, `apiInternalPort`, `webuiInternalPort`, `apiPort`, `webuiPort`, `externalHost`)
-- `PATCH /api/v1/apps/:stem` — `{ "enabled": true|false }` starts/stops Docker stack
+1. `.armin/devmin.yaml` manifest at repo root (see monorepo root example)
+2. Legacy `*-api` + `*-webui` sibling folders under `GITHUB_ROOT`

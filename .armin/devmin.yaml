@@ -1,0 +1,9 @@
+stack: devmin
+type: split
+applications:
+  - id: devmin-api
+    role: api
+    dir: devmin-api
+  - id: devmin-webui
+    role: webui
+    dir: devmin-webui

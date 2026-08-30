@@ -2,14 +2,20 @@
 <#
 .SYNOPSIS
   Deploy stack to the local Docker daemon using sibling YAML only.
-
-.DESCRIPTION
-  Sample for .armin/docker-scripts/run-on-docker-local.ps1.
-  Reads run-on-docker-local.yaml — no CLI -- flags.
-  Builds the image locally and runs docker compose up -d.
 #>
+[CmdletBinding()]
+param(
+    [ValidateSet('Install', 'Uninstall', 'Update', 'Reinstall')]
+    [string]$Action = 'Install',
+    [switch]$Stop
+)
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+if ($Stop) {
+    $Action = 'Uninstall'
+}
 
 $DeployDir = $PSScriptRoot
 $RepoRoot = [System.IO.Path]::GetFullPath((Join-Path $DeployDir '../..'))
@@ -122,7 +128,7 @@ function Ensure-Network([string]$NetworkName) {
 }
 
 if ($args.Count -gt 0) {
-    Write-Fail 'This script accepts no CLI arguments. Edit run-on-docker-local.yaml instead.'
+    Write-Fail 'Unexpected CLI arguments. Use -Action Install|Uninstall|Update|Reinstall.'
     Show-Help
     exit 1
 }
@@ -139,6 +145,15 @@ try {
     $deleteVolume = Test-Truthy ($(if ($cfg.ContainsKey('delete_volume')) { [string]$cfg['delete_volume'] } else { 'no' }))
     $deleteImage = Test-Truthy ($(if ($cfg.ContainsKey('delete_image')) { [string]$cfg['delete_image'] } else { 'no' }))
 
+    if ($Action -eq 'Reinstall') {
+        $deleteVolume = $true
+        $deleteImage = $true
+    }
+    if ($Action -eq 'Update') {
+        $deleteVolume = $false
+        $deleteImage = $false
+    }
+
     if (Test-Placeholder $composeFileRel) { throw 'compose_file is still a placeholder.' }
     if (Test-Placeholder $dockerfileRel) { throw 'dockerfile is still a placeholder.' }
     if (Test-Placeholder $stackName) { throw 'stack_name is still a placeholder.' }
@@ -146,6 +161,19 @@ try {
 
     $composePath = Resolve-DeployPath $composeFileRel
     $dockerfile = Resolve-DeployPath $dockerfileRel
+
+    if ($Action -eq 'Uninstall') {
+        Write-Step 'Uninstalling stack'
+        Ensure-Docker
+        if ($deleteVolume) {
+            docker compose -p $stackName -f $composePath --project-directory $RepoRoot down -v
+        }
+        else {
+            docker compose -p $stackName -f $composePath --project-directory $RepoRoot down
+        }
+        Write-Ok 'Uninstall complete'
+        return
+    }
 
     Write-Step "Stack=$stackName image=$imageTag network=$network publish_port='$publishPort' internal_port='$internalPort' delete_volume=$deleteVolume delete_image=$deleteImage"
 

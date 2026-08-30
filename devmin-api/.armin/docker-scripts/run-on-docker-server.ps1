@@ -10,11 +10,17 @@
 #>
 [CmdletBinding()]
 param(
+    [ValidateSet('Install', 'Uninstall', 'Update', 'Reinstall')]
+    [string]$Action = 'Install',
     [switch]$Stop
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+if ($Stop) {
+    $Action = 'Uninstall'
+}
 
 $DeployDir = $PSScriptRoot
 $RepoRoot = (Resolve-Path (Join-Path $DeployDir '../..')).Path
@@ -257,6 +263,14 @@ try {
     $internalPort = if ($cfg.ContainsKey('internal_port')) { [string]$cfg['internal_port'] } else { '' }
     $deleteVolume = Test-Truthy ($(if ($cfg.ContainsKey('delete_volume')) { [string]$cfg['delete_volume'] } else { 'no' }))
     $deleteImage = Test-Truthy ($(if ($cfg.ContainsKey('delete_image')) { [string]$cfg['delete_image'] } else { 'no' }))
+    if ($Action -eq 'Reinstall') {
+        $deleteVolume = $true
+        $deleteImage = $true
+    }
+    if ($Action -eq 'Update') {
+        $deleteVolume = $false
+        $deleteImage = $false
+    }
     $buildImageOn = if ($cfg.ContainsKey('build_image_on')) { [string]$cfg['build_image_on'] } else { 'local' }
     $buildImageOn = $buildImageOn.Trim().ToLowerInvariant()
     $sshValue = Require-Key $cfg 'ssh'
@@ -271,7 +285,7 @@ try {
 
     $target = Parse-SshTarget -SshValue $sshValue
 
-    if ($Stop) {
+    if ($Action -eq 'Uninstall') {
         $composePath = Resolve-DeployPath $composeFileRel
         $composeFileName = Split-Path -Leaf $composePath
         $remoteCompose = "$volumeDir/$composeFileName"

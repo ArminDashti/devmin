@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"embed"
+	"encoding/json"
 	"errors"
 
 	"github.com/ArminDashti/devmin-api/internal/runmode"
@@ -26,9 +27,13 @@ type User struct {
 }
 
 type AppPreference struct {
-	LocalEnabled   bool
-	DockerEnabled  bool
-	PublicEnabled  bool
+	HotReloadEnabled    bool
+	LocalDockerEnabled  bool
+	ServerDockerEnabled bool
+	ServerEnabled       bool
+	LocalEnabled        bool
+	DockerEnabled       bool
+	PublicEnabled       bool
 }
 
 func Connect(ctx context.Context, databaseURL string) (*Store, error) {
@@ -59,6 +64,7 @@ func (s *Store) Migrate(ctx context.Context) error {
 		"migrations/001_users.sql",
 		"migrations/002_app_run_mode.sql",
 		"migrations/003_app_mode_flags.sql",
+		"migrations/004_platform_channels.sql",
 	} {
 		sqlBytes, err := migrationFS.ReadFile(name)
 		if err != nil {
@@ -98,14 +104,27 @@ func (s *Store) GetUserByUsername(ctx context.Context, username string) (*User, 
 func (s *Store) GetAppPreference(ctx context.Context, stem string) (AppPreference, bool, error) {
 	var pref AppPreference
 	err := s.pool.QueryRow(ctx, `
-		SELECT local_enabled, docker_enabled, public_enabled
+		SELECT local_enabled, docker_enabled, public_enabled,
+		       hot_reload_enabled, server_docker_enabled, server_enabled
 		FROM app_preferences WHERE stem = $1
-	`, stem).Scan(&pref.LocalEnabled, &pref.DockerEnabled, &pref.PublicEnabled)
+	`, stem).Scan(
+		&pref.LocalEnabled, &pref.DockerEnabled, &pref.PublicEnabled,
+		&pref.HotReloadEnabled, &pref.ServerDockerEnabled, &pref.ServerEnabled,
+	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return AppPreference{}, false, nil
 		}
 		return AppPreference{}, false, err
+	}
+	if !pref.HotReloadEnabled && pref.LocalEnabled {
+		pref.HotReloadEnabled = pref.LocalEnabled
+	}
+	if !pref.ServerDockerEnabled && pref.PublicEnabled {
+		pref.ServerDockerEnabled = pref.PublicEnabled
+	}
+	if !pref.LocalDockerEnabled && pref.DockerEnabled {
+		pref.LocalDockerEnabled = pref.DockerEnabled
 	}
 	return pref, true, nil
 }
@@ -116,48 +135,75 @@ func (s *Store) SetModeEnabled(ctx context.Context, stem string, mode runmode.Mo
 		return err
 	}
 	switch mode {
+	case runmode.HotReload:
+		pref.HotReloadEnabled = enabled
 	case runmode.Local:
 		pref.LocalEnabled = enabled
 	case runmode.LocalDocker:
+		pref.LocalDockerEnabled = enabled
 		pref.DockerEnabled = enabled
-	case runmode.Server:
+	case runmode.ServerDocker:
+		pref.ServerDockerEnabled = enabled
 		pref.PublicEnabled = enabled
+	case runmode.Server:
+		pref.ServerEnabled = enabled
 	default:
 		return errors.New("invalid mode")
 	}
+	pref.DockerEnabled = pref.LocalDockerEnabled
+	pref.PublicEnabled = pref.ServerDockerEnabled
 	return s.SetAppPreference(ctx, stem, pref)
 }
 
 func (s *Store) SetAppPreference(ctx context.Context, stem string, pref AppPreference) error {
 	legacyMode := runmode.Default()
 	legacyEnabled := false
-	if pref.PublicEnabled {
+	if pref.ServerEnabled {
 		legacyMode = runmode.Server
 		legacyEnabled = true
-	} else if pref.DockerEnabled {
+	} else if pref.ServerDockerEnabled {
+		legacyMode = runmode.ServerDocker
+		legacyEnabled = true
+	} else if pref.LocalDockerEnabled {
 		legacyMode = runmode.LocalDocker
+		legacyEnabled = true
+	} else if pref.HotReloadEnabled {
+		legacyMode = runmode.HotReload
 		legacyEnabled = true
 	} else if pref.LocalEnabled {
 		legacyMode = runmode.Local
 		legacyEnabled = true
 	}
 	_, err := s.pool.Exec(ctx, `
-		INSERT INTO app_preferences (stem, local_enabled, docker_enabled, public_enabled, enabled, run_mode, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, NOW())
+		INSERT INTO app_preferences (
+			stem, local_enabled, docker_enabled, public_enabled,
+			hot_reload_enabled, server_docker_enabled, server_enabled,
+			enabled, run_mode, updated_at
+		)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
 		ON CONFLICT (stem) DO UPDATE SET
 			local_enabled = EXCLUDED.local_enabled,
 			docker_enabled = EXCLUDED.docker_enabled,
 			public_enabled = EXCLUDED.public_enabled,
+			hot_reload_enabled = EXCLUDED.hot_reload_enabled,
+			server_docker_enabled = EXCLUDED.server_docker_enabled,
+			server_enabled = EXCLUDED.server_enabled,
 			enabled = EXCLUDED.enabled,
 			run_mode = EXCLUDED.run_mode,
 			updated_at = NOW()
-	`, stem, pref.LocalEnabled, pref.DockerEnabled, pref.PublicEnabled, legacyEnabled, string(legacyMode))
+	`, stem,
+		pref.LocalEnabled, pref.DockerEnabled, pref.PublicEnabled,
+		pref.HotReloadEnabled, pref.ServerDockerEnabled, pref.ServerEnabled,
+		legacyEnabled, string(legacyMode),
+	)
 	return err
 }
 
 func (s *Store) ListAppPreferences(ctx context.Context) (map[string]AppPreference, error) {
 	rows, err := s.pool.Query(ctx, `
-		SELECT stem, local_enabled, docker_enabled, public_enabled FROM app_preferences
+		SELECT stem, local_enabled, docker_enabled, public_enabled,
+		       hot_reload_enabled, server_docker_enabled, server_enabled
+		FROM app_preferences
 	`)
 	if err != nil {
 		return nil, err
@@ -167,10 +213,44 @@ func (s *Store) ListAppPreferences(ctx context.Context) (map[string]AppPreferenc
 	for rows.Next() {
 		var stem string
 		var pref AppPreference
-		if err := rows.Scan(&stem, &pref.LocalEnabled, &pref.DockerEnabled, &pref.PublicEnabled); err != nil {
+		if err := rows.Scan(
+			&stem,
+			&pref.LocalEnabled, &pref.DockerEnabled, &pref.PublicEnabled,
+			&pref.HotReloadEnabled, &pref.ServerDockerEnabled, &pref.ServerEnabled,
+		); err != nil {
 			return nil, err
+		}
+		if !pref.HotReloadEnabled && pref.LocalEnabled {
+			pref.HotReloadEnabled = pref.LocalEnabled
+		}
+		if !pref.ServerDockerEnabled && pref.PublicEnabled {
+			pref.ServerDockerEnabled = pref.PublicEnabled
+		}
+		if !pref.LocalDockerEnabled && pref.DockerEnabled {
+			pref.LocalDockerEnabled = pref.DockerEnabled
 		}
 		out[stem] = pref
 	}
 	return out, rows.Err()
+}
+
+func (s *Store) GetGlobalSetting(ctx context.Context, key string) (json.RawMessage, bool, error) {
+	var raw json.RawMessage
+	err := s.pool.QueryRow(ctx, `SELECT value FROM global_settings WHERE key = $1`, key).Scan(&raw)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+	return raw, true, nil
+}
+
+func (s *Store) SetGlobalSetting(ctx context.Context, key string, value json.RawMessage) error {
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO global_settings (key, value, updated_at)
+		VALUES ($1, $2, NOW())
+		ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+	`, key, value)
+	return err
 }

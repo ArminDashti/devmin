@@ -1,0 +1,4 @@
+stack_name: devmin
+ssh: ssh t3
+deploy_root: /cloud-admin/apps/devmin
+public_url: https://devmin.xaigrok.ir/

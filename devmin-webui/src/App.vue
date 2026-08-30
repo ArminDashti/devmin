@@ -1,8 +1,8 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { RouterLink, RouterView, useRouter } from 'vue-router'
 import { Button } from '@/components/ui/button'
 import { clearSession, getToken } from '@/lib/auth'
-import { computed } from 'vue'
 
 const router = useRouter()
 const isAuthenticated = computed(() => !!getToken())
@@ -19,6 +19,7 @@ function onLogout() {
       <nav class="flex items-center gap-3">
         <RouterLink to="/" class="text-base font-semibold tracking-tight">Devmin</RouterLink>
         <RouterLink to="/apps" class="text-sm text-muted-foreground hover:text-foreground">Apps</RouterLink>
+        <RouterLink to="/settings" class="text-sm text-muted-foreground hover:text-foreground">Settings</RouterLink>
       </nav>
       <div class="flex items-center gap-2">
         <Button v-if="isAuthenticated" variant="ghost" size="sm" @click="onLogout">Log out</Button>
@@ -28,7 +29,11 @@ function onLogout() {
       </div>
     </header>
     <main class="min-h-0 flex-1 overflow-auto">
-      <RouterView />
+      <RouterView v-slot="{ Component }">
+        <KeepAlive include="AppsView">
+          <component :is="Component" />
+        </KeepAlive>
+      </RouterView>
     </main>
   </div>
 </template>

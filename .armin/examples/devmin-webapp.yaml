@@ -1,0 +1,6 @@
+stack: myaspnet
+type: webapp
+applications:
+  - id: myaspnet
+    role: app
+    dir: .

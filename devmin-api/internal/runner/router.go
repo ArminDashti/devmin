@@ -8,25 +8,34 @@ import (
 	"github.com/ArminDashti/devmin-api/internal/runmode"
 )
 
-// ModeRunner starts/stops an app pair for one deployment mode.
+// ModeRunner starts/stops an app pair for one deployment channel.
 type ModeRunner interface {
 	Start(ctx context.Context, pair discover.Pair) error
 	Stop(ctx context.Context, pair discover.Pair) error
 }
 
-// Router dispatches start/stop by run mode and tracks in-flight actions.
+// Router dispatches start/stop by channel and tracks in-flight actions.
 type Router struct {
-	flight *Flight
-	local  ModeRunner
-	docker ModeRunner
-	server ModeRunner
+	flight       *Flight
+	hotReload    ModeRunner
+	local        ModeRunner
+	localDocker  ModeRunner
+	serverDocker ModeRunner
+	server       ModeRunner
 }
 
-func NewRouter(local, docker, server ModeRunner, flight *Flight) *Router {
+func NewRouter(hotReload, local, localDocker, serverDocker, server ModeRunner, flight *Flight) *Router {
 	if flight == nil {
 		flight = NewFlight()
 	}
-	return &Router{flight: flight, local: local, docker: docker, server: server}
+	return &Router{
+		flight:       flight,
+		hotReload:    hotReload,
+		local:        local,
+		localDocker:  localDocker,
+		serverDocker: serverDocker,
+		server:       server,
+	}
 }
 
 func (r *Router) IsRunning(stem string) bool {
@@ -63,13 +72,17 @@ func (r *Router) withFlight(stem string, fn func() error) error {
 
 func (r *Router) forMode(mode runmode.Mode) (ModeRunner, error) {
 	switch mode {
+	case runmode.HotReload:
+		return r.hotReload, nil
 	case runmode.Local:
 		return r.local, nil
 	case runmode.LocalDocker:
-		return r.docker, nil
+		return r.localDocker, nil
+	case runmode.ServerDocker:
+		return r.serverDocker, nil
 	case runmode.Server:
 		return r.server, nil
 	default:
-		return nil, fmt.Errorf("unhandled runMode %q", mode)
+		return nil, fmt.Errorf("unhandled channel %q", mode)
 	}
 }

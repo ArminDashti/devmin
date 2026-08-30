@@ -1,0 +1,6 @@
+*.exe
+
+# Auto-managed large files (>5MB)
+devmin-webui/node_modules/@esbuild/win32-x64/esbuild.exe
+devmin-webui/node_modules/typescript/lib/_tsc.js
+devmin-webui/node_modules/typescript/lib/typescript.js

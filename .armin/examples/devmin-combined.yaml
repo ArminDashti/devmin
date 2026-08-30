@@ -1,0 +1,9 @@
+stack: exar
+type: combined-api-webui
+applications:
+  - id: exar-api
+    role: api
+    dir: .
+  - id: exar-webui
+    role: webui
+    dir: .

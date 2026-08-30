@@ -124,6 +124,67 @@ func PublicURL(stackName string) string {
 	return fmt.Sprintf("https://%s.xaigrok.ir/", stackName)
 }
 
+type BareDeployConfig struct {
+	StackName  string
+	SSH        string
+	DeployRoot string
+	PublicURL  string
+}
+
+func ReadBareDeployConfig(projectDir string) (*BareDeployConfig, error) {
+	yamlPath := filepath.Join(projectDir, ".armin", "server-scripts", "run-on-server.yaml")
+	data, err := os.ReadFile(yamlPath)
+	if err != nil {
+		return nil, err
+	}
+	cfg := &BareDeployConfig{}
+	for _, raw := range strings.Split(string(data), "\n") {
+		line := strings.TrimSpace(raw)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		key, val, ok := strings.Cut(line, ":")
+		if !ok {
+			continue
+		}
+		key = strings.TrimSpace(key)
+		val = strings.Trim(strings.TrimSpace(val), `"'`)
+		switch key {
+		case "stack_name":
+			cfg.StackName = val
+		case "ssh":
+			cfg.SSH = val
+		case "deploy_root":
+			cfg.DeployRoot = val
+		case "public_url":
+			cfg.PublicURL = val
+		}
+	}
+	if cfg.StackName == "" {
+		return nil, fmt.Errorf("stack_name missing in %s", yamlPath)
+	}
+	return cfg, nil
+}
+
+func HasBareServerDeploy(projectDir string) bool {
+	script := filepath.Join(projectDir, ".armin", "server-scripts", "run-on-server.ps1")
+	if _, err := os.Stat(script); err != nil {
+		return false
+	}
+	cfg, err := ReadBareDeployConfig(projectDir)
+	if err != nil {
+		return false
+	}
+	if cfg.SSH == "" || placeholderRe.MatchString(cfg.SSH) {
+		return false
+	}
+	return true
+}
+
+func BareServerScriptPath(projectDir string) string {
+	return filepath.Join(projectDir, ".armin", "server-scripts", "run-on-server.ps1")
+}
+
 func sshCommandArgs(sshValue, remoteCommand string) ([]string, error) {
 	sshValue = strings.TrimSpace(sshValue)
 	if strings.HasPrefix(strings.ToLower(sshValue), "ssh ") {

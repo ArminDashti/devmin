@@ -5,22 +5,45 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/ArminDashti/devmin-api/internal/actions"
 	"github.com/ArminDashti/devmin-api/internal/apps"
 	"github.com/ArminDashti/devmin-api/internal/auth"
 	"github.com/ArminDashti/devmin-api/internal/config"
+	"github.com/ArminDashti/devmin-api/internal/dockerparams"
+	"github.com/ArminDashti/devmin-api/internal/discover"
 	"github.com/ArminDashti/devmin-api/internal/runmode"
+	"github.com/ArminDashti/devmin-api/internal/scripts"
+	"github.com/ArminDashti/devmin-api/internal/settings"
+	"github.com/ArminDashti/devmin-api/internal/stacks"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 )
 
 type Server struct {
-	cfg     config.Config
-	auth    *auth.Service
-	appsSvc *apps.Service
+	cfg         config.Config
+	auth        *auth.Service
+	appsSvc     *apps.Service
+	stacksSvc   *stacks.Service
+	actionsSvc  *actions.Service
+	settingsSvc *settings.Service
 }
 
-func New(cfg config.Config, authSvc *auth.Service, appsSvc *apps.Service) *Server {
-	return &Server{cfg: cfg, auth: authSvc, appsSvc: appsSvc}
+func New(
+	cfg config.Config,
+	authSvc *auth.Service,
+	appsSvc *apps.Service,
+	stacksSvc *stacks.Service,
+	actionsSvc *actions.Service,
+	settingsSvc *settings.Service,
+) *Server {
+	return &Server{
+		cfg:         cfg,
+		auth:        authSvc,
+		appsSvc:     appsSvc,
+		stacksSvc:   stacksSvc,
+		actionsSvc:  actionsSvc,
+		settingsSvc: settingsSvc,
+	}
 }
 
 func (s *Server) Router() *gin.Engine {
@@ -28,7 +51,7 @@ func (s *Server) Router() *gin.Engine {
 	r.Use(gin.Recovery(), gin.Logger())
 	r.Use(cors.New(cors.Config{
 		AllowOrigins:     s.cfg.CORSOrigins,
-		AllowMethods:     []string{"GET", "POST", "PATCH", "OPTIONS"},
+		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
 		ExposeHeaders:    []string{"Content-Length"},
 		AllowCredentials: true,
@@ -51,6 +74,15 @@ func (s *Server) Router() *gin.Engine {
 	{
 		protected.GET("/apps", s.getApps)
 		protected.PATCH("/apps/:stem", s.patchApp)
+		protected.GET("/stacks", s.getStacks)
+		protected.GET("/stacks/:stem", s.getStack)
+		protected.GET("/applications/:appId", s.getApplication)
+		protected.POST("/actions", s.postAction)
+		protected.GET("/actions/:id", s.getAction)
+		protected.GET("/settings", s.getSettings)
+		protected.PUT("/settings", s.putSettings)
+		protected.GET("/projects/:stem/docker-params", s.getDockerParams)
+		protected.PATCH("/projects/:stem/docker-params", s.patchDockerParams)
 	}
 
 	return r
@@ -109,14 +141,12 @@ func (s *Server) patchApp(c *gin.Context) {
 		return
 	}
 	update := apps.UpdateRequest{Enabled: req.Enabled}
-	if req.RunMode != nil {
-		mode, err := runmode.Parse(*req.RunMode)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-		update.RunMode = &mode
+	mode, err := runmode.Parse(*req.RunMode)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
+	update.RunMode = &mode
 	if err := s.appsSvc.UpdateApp(c.Request.Context(), stem, update); err != nil {
 		if strings.Contains(err.Error(), "already in progress") {
 			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
@@ -137,4 +167,160 @@ func (s *Server) patchApp(c *gin.Context) {
 		}
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+func (s *Server) getStacks(c *gin.Context) {
+	list, err := s.stacksSvc.List(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"stacks": list})
+}
+
+func (s *Server) getStack(c *gin.Context) {
+	stem := strings.TrimSpace(c.Param("stem"))
+	stack, err := s.stacksSvc.Get(c.Request.Context(), stem)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if stack == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "stack not found"})
+		return
+	}
+	c.JSON(http.StatusOK, stack)
+}
+
+func (s *Server) getApplication(c *gin.Context) {
+	appID := strings.TrimSpace(c.Param("appId"))
+	app, stack, err := s.stacksSvc.GetApplication(c.Request.Context(), appID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	if app == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"application": app, "stack": stack})
+}
+
+type postActionRequest struct {
+	Stem    string `json:"stem"`
+	AppID   string `json:"appId"`
+	Channel string `json:"channel"`
+	Action  string `json:"action"`
+}
+
+func (s *Server) postAction(c *gin.Context) {
+	var req postActionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+	channel, err := runmode.Parse(req.Channel)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	action, err := scripts.ParseAction(req.Action)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	job, err := s.actionsSvc.Run(c.Request.Context(), actions.Request{
+		Stem:    req.Stem,
+		AppID:   req.AppID,
+		Channel: channel,
+		Action:  action,
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "already in progress") {
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusAccepted, job)
+}
+
+func (s *Server) getAction(c *gin.Context) {
+	id := strings.TrimSpace(c.Param("id"))
+	job, ok := s.actionsSvc.GetJob(id)
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "job not found"})
+		return
+	}
+	c.JSON(http.StatusOK, job)
+}
+
+func (s *Server) getSettings(c *gin.Context) {
+	settings, err := s.settingsSvc.Get(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, settings)
+}
+
+func (s *Server) putSettings(c *gin.Context) {
+	var body settings.PlatformSettings
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+	if err := s.settingsSvc.Put(c.Request.Context(), body); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, body)
+}
+
+func (s *Server) getDockerParams(c *gin.Context) {
+	stem := strings.TrimSpace(c.Param("stem"))
+	targetRaw := c.DefaultQuery("target", "local")
+	target, err := dockerparams.ParseTarget(targetRaw)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	proj, err := discover.FindProjectByStem(s.cfg.GitHubRoot, stem)
+	if err != nil || proj == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "stack not found"})
+		return
+	}
+	params, err := dockerparams.Read(proj.PrimaryDir(), target)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"target": target, "params": params})
+}
+
+func (s *Server) patchDockerParams(c *gin.Context) {
+	stem := strings.TrimSpace(c.Param("stem"))
+	targetRaw := c.DefaultQuery("target", "local")
+	target, err := dockerparams.ParseTarget(targetRaw)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	var body map[string]string
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+	proj, err := discover.FindProjectByStem(s.cfg.GitHubRoot, stem)
+	if err != nil || proj == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "stack not found"})
+		return
+	}
+	if err := dockerparams.Write(proj.PrimaryDir(), target, body); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	params, _ := dockerparams.Read(proj.PrimaryDir(), target)
+	c.JSON(http.StatusOK, gin.H{"target": target, "params": params})
 }

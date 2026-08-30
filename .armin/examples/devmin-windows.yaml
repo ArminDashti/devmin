@@ -1,0 +1,6 @@
+stack: mywinapp
+type: windows
+applications:
+  - id: mywinapp
+    role: windows
+    dir: .
