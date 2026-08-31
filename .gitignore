@@ -4,3 +4,8 @@
 devmin-webui/node_modules/@esbuild/win32-x64/esbuild.exe
 devmin-webui/node_modules/typescript/lib/_tsc.js
 devmin-webui/node_modules/typescript/lib/typescript.js
+
+# auto-managed: files > 5MB
+
+devmin-api/tmp/server
+devmin-api/tmp/**

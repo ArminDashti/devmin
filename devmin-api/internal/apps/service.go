@@ -70,7 +70,7 @@ func (s *Service) List(ctx context.Context) ([]Row, error) {
 	if err != nil {
 		return nil, err
 	}
-	nativeState, err := nativestate.ReadState(s.cfg.NativeStatePath)
+	nativeState, err := nativestate.ReadMergedState(s.cfg.NativeStatePath, s.cfg.NativeHotReloadStatePath)
 	if err != nil {
 		return nil, err
 	}

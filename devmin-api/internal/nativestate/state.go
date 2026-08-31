@@ -39,6 +39,33 @@ func ReadState(path string) (*StateFile, error) {
 	return &state, nil
 }
 
+// ReadMergedState loads one or more state files; later files override same name+role rows.
+func ReadMergedState(paths ...string) (*StateFile, error) {
+	byKey := map[string]ProcRow{}
+	var startedAt string
+	for _, path := range paths {
+		if strings.TrimSpace(path) == "" {
+			continue
+		}
+		state, err := ReadState(path)
+		if err != nil {
+			return nil, err
+		}
+		if startedAt == "" && state.StartedAt != "" {
+			startedAt = state.StartedAt
+		}
+		for _, p := range state.Processes {
+			key := strings.ToLower(p.Name) + "|" + strings.ToLower(p.Role)
+			byKey[key] = p
+		}
+	}
+	out := make([]ProcRow, 0, len(byKey))
+	for _, p := range byKey {
+		out = append(out, p)
+	}
+	return &StateFile{StartedAt: startedAt, Processes: out}, nil
+}
+
 // PortsForStem returns api and webui host ports for a stem (app name).
 func PortsForStem(state *StateFile, stem string) (apiPort, webuiPort int, apiURL, webuiURL string) {
 	if state == nil {

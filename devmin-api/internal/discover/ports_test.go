@@ -6,6 +6,15 @@ import (
 	"testing"
 )
 
+func TestResolvePublishPortFromYaml(t *testing.T) {
+	dir := t.TempDir()
+	writeRunYaml(t, dir, `publish_port: "5195"
+internal_port: "80"`)
+	if got := ResolvePublishPort(dir); got != 5195 {
+		t.Fatalf("got %d want 5195", got)
+	}
+}
+
 func TestResolveInternalPortFromYaml(t *testing.T) {
 	dir := t.TempDir()
 	writeRunYaml(t, dir, `internal_port: "8080"`)

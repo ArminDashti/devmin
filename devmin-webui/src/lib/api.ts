@@ -214,16 +214,43 @@ export function putSettings(body: PlatformSettings): Promise<PlatformSettings> {
   }, true)
 }
 
-export function fetchDockerParams(stem: string, target: 'local' | 'server'): Promise<{ target: string; params: Record<string, string> }> {
-  return apiFetch(`/api/v1/projects/${encodeURIComponent(stem)}/docker-params?target=${target}`, {}, true)
+export function fetchDockerParams(
+  appId: string,
+  target: 'local' | 'server',
+): Promise<{ target: string; params: Record<string, string>; appId?: string }> {
+  return apiFetch(
+    `/api/v1/applications/${encodeURIComponent(appId)}/docker-params?target=${target}`,
+    {},
+    true,
+  )
 }
 
 export function patchDockerParams(
-  stem: string,
+  appId: string,
   target: 'local' | 'server',
   params: Record<string, string>,
-): Promise<{ target: string; params: Record<string, string> }> {
-  return apiFetch(`/api/v1/projects/${encodeURIComponent(stem)}/docker-params?target=${target}`, {
+): Promise<{ target: string; params: Record<string, string>; appId?: string }> {
+  return apiFetch(`/api/v1/applications/${encodeURIComponent(appId)}/docker-params?target=${target}`, {
+    method: 'PATCH',
+    body: JSON.stringify(params),
+  }, true)
+}
+
+export function fetchServerParams(
+  appId: string,
+): Promise<{ params: Record<string, string>; appId?: string }> {
+  return apiFetch(
+    `/api/v1/applications/${encodeURIComponent(appId)}/server-params`,
+    {},
+    true,
+  )
+}
+
+export function patchServerParams(
+  appId: string,
+  params: Record<string, string>,
+): Promise<{ params: Record<string, string>; appId?: string }> {
+  return apiFetch(`/api/v1/applications/${encodeURIComponent(appId)}/server-params`, {
     method: 'PATCH',
     body: JSON.stringify(params),
   }, true)

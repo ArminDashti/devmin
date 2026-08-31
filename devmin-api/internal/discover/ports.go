@@ -29,18 +29,28 @@ func resolveInternalPort(projectDir string, fallback int) int {
 	return fallback
 }
 
+// ResolvePublishPort reads the host publish port from run-on-docker-local.yaml.
+func ResolvePublishPort(projectDir string) int {
+	return yamlPortField(projectDir, "publish_port")
+}
+
 func yamlInternalPort(projectDir string) int {
+	return yamlPortField(projectDir, "internal_port")
+}
+
+func yamlPortField(projectDir, field string) int {
 	yamlPath := filepath.Join(projectDir, ".armin", "docker-scripts", "run-on-docker-local.yaml")
 	data, err := os.ReadFile(yamlPath)
 	if err != nil {
 		return 0
 	}
+	prefix := field + ":"
 	for _, line := range strings.Split(string(data), "\n") {
 		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(line, "internal_port:") {
+		if !strings.HasPrefix(line, prefix) {
 			continue
 		}
-		val := strings.TrimSpace(strings.TrimPrefix(line, "internal_port:"))
+		val := strings.TrimSpace(strings.TrimPrefix(line, prefix))
 		val = strings.Trim(val, `"'`)
 		n, err := strconv.Atoi(val)
 		if err != nil || n <= 0 {

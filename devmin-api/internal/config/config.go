@@ -17,9 +17,10 @@ type Config struct {
 	DockerStatePath     string
 	DockerRunnerScript  string
 	NativeRunnerScript  string
-	NativeStatePath     string
-	NativeAppsConfig       string
-	NativeHotReloadScript  string
+	NativeStatePath          string
+	NativeHotReloadStatePath string
+	NativeAppsConfig         string
+	NativeHotReloadScript    string
 	ServerSSHTimeoutSec    int
 	HostIP                 string
 	PcArminBase            string
@@ -34,14 +35,15 @@ func Load() Config {
 		DefaultPassword:     getenv("DEFAULT_PASSWORD", "dopadopa123"),
 		CORSOrigins:         splitCSV(getenv("CORS_ORIGINS", "http://127.0.0.1:5195,http://localhost:5195")),
 		GitHubRoot:          getenv("GITHUB_ROOT", "C:/Users/armin/GitHub"),
-		DockerStatePath:     getenv("DOCKER_STATE_PATH", "C:/Users/armin/.cursor/plugins/local/devops-by-armin/skills/run-apps-on-local-docker/.run-local-docker-pairs-state.json"),
-		DockerRunnerScript:  getenv("DOCKER_RUNNER_SCRIPT", "C:/Users/armin/.cursor/plugins/local/devops-by-armin/skills/run-apps-on-local-docker/scripts/Run-LocalDockerAppPairs.ps1"),
-		NativeRunnerScript:  getenv("NATIVE_RUNNER_SCRIPT", "C:/Users/armin/.cursor/plugins/local/devops-by-armin/skills/run-all-apps-locally/scripts/Run-ListedApps.ps1"),
-		NativeStatePath:     getenv("NATIVE_STATE_PATH", "C:/Users/armin/.cursor/plugins/local/devops-by-armin/skills/run-all-apps-locally/.run-listed-apps-state.json"),
-		NativeAppsConfig:    getenv("NATIVE_APPS_CONFIG", "C:/Users/armin/.cursor/plugins/local/devops-by-armin/skills/run-all-apps-locally/apps.yaml"),
-		ServerSSHTimeoutSec: getenvInt("SERVER_SSH_TIMEOUT_SEC", 300),
-		HostIP:                 getenv("HOST_IP", "127.0.0.1"),
-		NativeHotReloadScript:  getenv("NATIVE_HOT_RELOAD_SCRIPT", "C:/Users/armin/.cursor/plugins/local/devops-by-armin/skills/local-hot-reload/scripts/Run-LocalHotReloadPair.ps1"),
+		DockerStatePath:          getenv("DOCKER_STATE_PATH", "C:/Users/armin/.cursor/plugins/local/devops-by-armin/skills/run-all-apps-on-local-docker/.run-local-docker-pairs-state.json"),
+		DockerRunnerScript:       getenv("DOCKER_RUNNER_SCRIPT", "C:/Users/armin/.cursor/plugins/local/devops-by-armin/skills/run-all-apps-on-local-docker/scripts/Run-LocalDockerAppPairs.ps1"),
+		NativeRunnerScript:       getenv("NATIVE_RUNNER_SCRIPT", "C:/Users/armin/.cursor/plugins/local/devops-by-armin/skills/run-all-apps-on-local-machine/scripts/Run-ListedApps.ps1"),
+		NativeStatePath:          getenv("NATIVE_STATE_PATH", "C:/Users/armin/.cursor/plugins/local/devops-by-armin/skills/run-all-apps-on-local-machine/.run-listed-apps-state.json"),
+		NativeHotReloadStatePath: getenv("NATIVE_HOT_RELOAD_STATE_PATH", "C:/Users/armin/.cursor/plugins/local/devops-by-armin/skills/run-this-app-on-local-machine-hot-reload/.run-this-app-on-local-machine-hot-reload-pairs-state.json"),
+		NativeAppsConfig:         getenv("NATIVE_APPS_CONFIG", "C:/Users/armin/.cursor/plugins/local/devops-by-armin/skills/run-all-apps-on-local-machine/apps.yaml"),
+		ServerSSHTimeoutSec:      getenvInt("SERVER_SSH_TIMEOUT_SEC", 300),
+		HostIP:                   getenv("HOST_IP", "127.0.0.1"),
+		NativeHotReloadScript:    getenv("NATIVE_HOT_RELOAD_SCRIPT", "C:/Users/armin/.cursor/plugins/local/devops-by-armin/skills/run-this-app-on-local-machine-hot-reload/scripts/Run-LocalHotReloadPair.ps1"),
 		PcArminBase:            getenv("PC_ARMIN_BASE", "http://pc-armin"),
 	}
 }

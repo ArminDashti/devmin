@@ -97,9 +97,9 @@ func (r *Resolver) ExtraArgs(channel runmode.Mode, action Action, proj discover.
 		}
 	case runmode.Local:
 		switch action {
-		case ActionEnable:
+		case ActionEnable, ActionInstall, ActionUpdate, ActionReinstall:
 			return []string{"-Name", proj.Stem, "-SkipStopBeforeStart"}
-		case ActionDisable:
+		case ActionDisable, ActionUninstall:
 			return []string{"-StopName", proj.Stem}
 		default:
 			return nil

@@ -11,6 +11,7 @@ import (
 	"github.com/ArminDashti/devmin-api/internal/config"
 	"github.com/ArminDashti/devmin-api/internal/dockerparams"
 	"github.com/ArminDashti/devmin-api/internal/discover"
+	"github.com/ArminDashti/devmin-api/internal/serverparams"
 	"github.com/ArminDashti/devmin-api/internal/runmode"
 	"github.com/ArminDashti/devmin-api/internal/scripts"
 	"github.com/ArminDashti/devmin-api/internal/settings"
@@ -77,6 +78,10 @@ func (s *Server) Router() *gin.Engine {
 		protected.GET("/stacks", s.getStacks)
 		protected.GET("/stacks/:stem", s.getStack)
 		protected.GET("/applications/:appId", s.getApplication)
+		protected.GET("/applications/:appId/docker-params", s.getAppDockerParams)
+		protected.PATCH("/applications/:appId/docker-params", s.patchAppDockerParams)
+		protected.GET("/applications/:appId/server-params", s.getAppServerParams)
+		protected.PATCH("/applications/:appId/server-params", s.patchAppServerParams)
 		protected.POST("/actions", s.postAction)
 		protected.GET("/actions/:id", s.getAction)
 		protected.GET("/settings", s.getSettings)
@@ -278,8 +283,73 @@ func (s *Server) putSettings(c *gin.Context) {
 	c.JSON(http.StatusOK, body)
 }
 
+func (s *Server) getAppDockerParams(c *gin.Context) {
+	appID := strings.TrimSpace(c.Param("appId"))
+	targetRaw := c.DefaultQuery("target", "local")
+	target, err := dockerparams.ParseTarget(targetRaw)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	_, app, err := discover.FindApplicationByID(s.cfg.GitHubRoot, appID)
+	if err != nil || app == nil || app.Dir == "" {
+		c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
+		return
+	}
+	params, err := dockerparams.Read(app.Dir, target)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"target": target, "params": params, "appId": appID})
+}
+
+func (s *Server) patchAppDockerParams(c *gin.Context) {
+	appID := strings.TrimSpace(c.Param("appId"))
+	targetRaw := c.DefaultQuery("target", "local")
+	target, err := dockerparams.ParseTarget(targetRaw)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	var body map[string]string
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+	_, app, err := discover.FindApplicationByID(s.cfg.GitHubRoot, appID)
+	if err != nil || app == nil || app.Dir == "" {
+		c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
+		return
+	}
+	if err := dockerparams.Write(app.Dir, target, body); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	params, _ := dockerparams.Read(app.Dir, target)
+	c.JSON(http.StatusOK, gin.H{"target": target, "params": params, "appId": appID})
+}
+
+func dockerParamsDir(proj *discover.Project, appID string) string {
+	if appID != "" {
+		if app := proj.AppByID(appID); app != nil && app.Dir != "" {
+			return app.Dir
+		}
+	}
+	for _, app := range proj.Applications {
+		if app.Dir == "" {
+			continue
+		}
+		if _, err := dockerparams.Read(app.Dir, dockerparams.TargetLocal); err == nil {
+			return app.Dir
+		}
+	}
+	return proj.PrimaryDir()
+}
+
 func (s *Server) getDockerParams(c *gin.Context) {
 	stem := strings.TrimSpace(c.Param("stem"))
+	appID := strings.TrimSpace(c.Query("appId"))
 	targetRaw := c.DefaultQuery("target", "local")
 	target, err := dockerparams.ParseTarget(targetRaw)
 	if err != nil {
@@ -291,7 +361,8 @@ func (s *Server) getDockerParams(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "stack not found"})
 		return
 	}
-	params, err := dockerparams.Read(proj.PrimaryDir(), target)
+	dir := dockerParamsDir(proj, appID)
+	params, err := dockerparams.Read(dir, target)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
@@ -301,6 +372,7 @@ func (s *Server) getDockerParams(c *gin.Context) {
 
 func (s *Server) patchDockerParams(c *gin.Context) {
 	stem := strings.TrimSpace(c.Param("stem"))
+	appID := strings.TrimSpace(c.Query("appId"))
 	targetRaw := c.DefaultQuery("target", "local")
 	target, err := dockerparams.ParseTarget(targetRaw)
 	if err != nil {
@@ -317,10 +389,46 @@ func (s *Server) patchDockerParams(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "stack not found"})
 		return
 	}
-	if err := dockerparams.Write(proj.PrimaryDir(), target, body); err != nil {
+	dir := dockerParamsDir(proj, appID)
+	if err := dockerparams.Write(dir, target, body); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	params, _ := dockerparams.Read(proj.PrimaryDir(), target)
+	params, _ := dockerparams.Read(dir, target)
 	c.JSON(http.StatusOK, gin.H{"target": target, "params": params})
+}
+
+func (s *Server) getAppServerParams(c *gin.Context) {
+	appID := strings.TrimSpace(c.Param("appId"))
+	_, app, err := discover.FindApplicationByID(s.cfg.GitHubRoot, appID)
+	if err != nil || app == nil || app.Dir == "" {
+		c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
+		return
+	}
+	params, err := serverparams.Read(app.Dir)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"params": params, "appId": appID})
+}
+
+func (s *Server) patchAppServerParams(c *gin.Context) {
+	appID := strings.TrimSpace(c.Param("appId"))
+	var body map[string]string
+	if err := c.ShouldBindJSON(&body); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request"})
+		return
+	}
+	_, app, err := discover.FindApplicationByID(s.cfg.GitHubRoot, appID)
+	if err != nil || app == nil || app.Dir == "" {
+		c.JSON(http.StatusNotFound, gin.H{"error": "application not found"})
+		return
+	}
+	if err := serverparams.Write(app.Dir, body); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	params, _ := serverparams.Read(app.Dir)
+	c.JSON(http.StatusOK, gin.H{"params": params, "appId": appID})
 }

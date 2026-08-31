@@ -127,7 +127,7 @@ function Ensure-Network([string]$NetworkName) {
     }
 }
 
-if ($args.Count -gt 0) {
+if ($MyInvocation.UnboundArguments.Count -gt 0) {
     Write-Fail 'Unexpected CLI arguments. Use -Action Install|Uninstall|Update|Reinstall.'
     Show-Help
     exit 1

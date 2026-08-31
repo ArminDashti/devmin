@@ -56,7 +56,7 @@ func (s *Service) loadContext(ctx context.Context) ([]discover.Project, *dockers
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
 	}
-	nativeState, err := nativestate.ReadState(s.cfg.NativeStatePath)
+	nativeState, err := nativestate.ReadMergedState(s.cfg.NativeStatePath, s.cfg.NativeHotReloadStatePath)
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
 	}

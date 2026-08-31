@@ -47,14 +47,14 @@ func (b *Builder) ForApplication(proj discover.Project, app discover.Application
 	pair := proj.Pair
 
 	if pair != nil {
-		lines = append(lines, b.nativeLines(proj, role, app.InternalPort)...)
+		lines = append(lines, b.nativeLines(proj, app)...)
 		lines = append(lines, b.localDockerLines(*pair, role)...)
 		lines = append(lines, b.serverDockerLines(*pair, role)...)
 		lines = append(lines, b.serverLines(*pair, role)...)
 	} else if proj.Type == discover.ProjectTypeWindows {
-		lines = append(lines, b.nativeLines(proj, role, app.InternalPort)...)
+		lines = append(lines, b.nativeLines(proj, app)...)
 	} else {
-		lines = append(lines, b.nativeLines(proj, role, app.InternalPort)...)
+		lines = append(lines, b.nativeLines(proj, app)...)
 		if app.Dir != "" {
 			lines = append(lines, Line{
 				Channel: string(runmode.LocalDocker),
@@ -77,11 +77,11 @@ func nativeChannel(proj discover.Project) runmode.Mode {
 	return runmode.Local
 }
 
-func (b *Builder) nativeLines(proj discover.Project, role string, fallbackPort int) []Line {
-	return b.nativeLinesForChannel(proj.Stem, role, fallbackPort, nativeChannel(proj))
+func (b *Builder) nativeLines(proj discover.Project, app discover.Application) []Line {
+	return b.nativeLinesForChannel(proj.Stem, app.Role, app.Dir, app.InternalPort, nativeChannel(proj))
 }
 
-func (b *Builder) nativeLinesForChannel(stem, role string, fallbackPort int, channel runmode.Mode) []Line {
+func (b *Builder) nativeLinesForChannel(stem, role, appDir string, fallbackPort int, channel runmode.Mode) []Line {
 	apiPort, webuiPort, apiURL, webuiURL := nativestate.PortsForStem(b.nativeState, stem)
 	var url string
 	var port int
@@ -92,7 +92,7 @@ func (b *Builder) nativeLinesForChannel(stem, role string, fallbackPort int, cha
 		if url == "" && port > 0 {
 			url = fmt.Sprintf("http://127.0.0.1:%d/", port)
 		}
-		if port == 0 && fallbackPort > 0 {
+		if port == 0 && channel != runmode.HotReload && fallbackPort > 0 {
 			port = fallbackPort
 			url = fmt.Sprintf("http://127.0.0.1:%d/", port)
 		}
@@ -102,17 +102,25 @@ func (b *Builder) nativeLinesForChannel(stem, role string, fallbackPort int, cha
 		if url == "" && port > 0 {
 			url = fmt.Sprintf("http://127.0.0.1:%d/", port)
 		}
-		if port == 0 && fallbackPort > 0 {
+		if port == 0 && channel != runmode.HotReload && fallbackPort > 0 {
 			port = fallbackPort
 			url = fmt.Sprintf("http://127.0.0.1:%d/", port)
 		}
 	default:
-		port = fallbackPort
+		if channel != runmode.HotReload {
+			port = fallbackPort
+			if port > 0 {
+				url = fmt.Sprintf("http://127.0.0.1:%d/", port)
+			}
+		}
+	}
+	if port == 0 && channel == runmode.HotReload {
+		port = hotReloadProbePort(appDir, fallbackPort)
 		if port > 0 {
 			url = fmt.Sprintf("http://127.0.0.1:%d/", port)
 		}
 	}
-	if url == "" {
+	if url == "" || port <= 0 {
 		return nil
 	}
 	return []Line{{
@@ -120,6 +128,19 @@ func (b *Builder) nativeLinesForChannel(stem, role string, fallbackPort int, cha
 		URL:     url,
 		Status:  portStatus(port),
 	}}
+}
+
+// hotReloadProbePort picks a host port for hot-reload when runner state is missing.
+// Prefer publish_port from docker yaml; otherwise use internal port only if it is listening
+// (avoids treating container nginx port 80 as a dev endpoint).
+func hotReloadProbePort(appDir string, internalPort int) int {
+	if p := discover.ResolvePublishPort(appDir); p > 0 && probe.PortListening("127.0.0.1", p) {
+		return p
+	}
+	if internalPort > 0 && internalPort != 80 && probe.PortListening("127.0.0.1", internalPort) {
+		return internalPort
+	}
+	return 0
 }
 
 func (b *Builder) localDockerLines(pair discover.Pair, role string) []Line {

@@ -35,7 +35,8 @@ Default login: `armin` / `dopadopa123`
 | `GET` | `/api/v1/actions/:id` | Poll action job |
 | `GET` | `/api/v1/settings` | Platform settings |
 | `PUT` | `/api/v1/settings` | Update settings |
-| `GET/PATCH` | `/api/v1/projects/:stem/docker-params?target=local\|server` | Docker YAML params |
+| `GET/PATCH` | `/api/v1/applications/:appId/docker-params?target=local\|server` | Docker YAML params (per app dir) |
+| `GET/PATCH` | `/api/v1/projects/:stem/docker-params?target=local\|server&appId=` | Docker YAML params (legacy; optional appId) |
 | `GET` | `/api/v1/apps` | Legacy grid (backward compatible) |
 | `PATCH` | `/api/v1/apps/:stem` | Legacy enable/disable |
 

@@ -1,4 +1,4 @@
-package dockerparams
+package serverparams
 
 import (
 	"fmt"
@@ -9,46 +9,17 @@ import (
 
 var knownKeys = []string{
 	"stack_name",
-	"image_tag",
-	"compose_file",
-	"dockerfile",
-	"docker_network",
-	"internal_port",
-	"publish_port",
-	"delete_volume",
-	"delete_image",
-	"build_image_on",
 	"ssh",
-	"volume_dir",
+	"deploy_root",
+	"public_url",
 }
 
-type Target string
-
-const (
-	TargetLocal  Target = "local"
-	TargetServer Target = "server"
-)
-
-func ParseTarget(raw string) (Target, error) {
-	t := Target(strings.TrimSpace(raw))
-	switch t {
-	case TargetLocal, TargetServer:
-		return t, nil
-	default:
-		return "", fmt.Errorf("target must be local or server")
-	}
+func yamlPath(projectDir string) string {
+	return filepath.Join(projectDir, ".armin", "server-scripts", "run-on-server.yaml")
 }
 
-func yamlPath(projectDir string, target Target) string {
-	name := "run-on-docker-local.yaml"
-	if target == TargetServer {
-		name = "run-on-docker-server.yaml"
-	}
-	return filepath.Join(projectDir, ".armin", "docker-scripts", name)
-}
-
-func Read(projectDir string, target Target) (map[string]string, error) {
-	path := yamlPath(projectDir, target)
+func Read(projectDir string) (map[string]string, error) {
+	path := yamlPath(projectDir)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -56,9 +27,9 @@ func Read(projectDir string, target Target) (map[string]string, error) {
 	return parseFlatYAML(string(data))
 }
 
-func Write(projectDir string, target Target, values map[string]string) error {
-	path := yamlPath(projectDir, target)
-	existing, err := Read(projectDir, target)
+func Write(projectDir string, values map[string]string) error {
+	path := yamlPath(projectDir)
+	existing, err := Read(projectDir)
 	if err != nil {
 		existing = map[string]string{}
 	}

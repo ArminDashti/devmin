@@ -121,7 +121,7 @@ function Ensure-Network([string]$NetworkName) {
     }
 }
 
-if ($args.Count -gt 0) {
+if ($MyInvocation.UnboundArguments.Count -gt 0) {
     Write-Fail 'This script accepts no CLI arguments. Edit run-on-docker-local.yaml instead.'
     Show-Help
     exit 1
