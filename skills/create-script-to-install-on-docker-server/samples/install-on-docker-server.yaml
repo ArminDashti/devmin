@@ -1,0 +1,20 @@
+# Remote first-time install settings — copy to devmin/scripts/docker/<repo_name>/ and adapt.
+# Scripts read this file only (no CLI -- flags).
+# Non-empty override fields replace values from compose_file / dockerfile.
+# Fill ssh with a real value before running; leave placeholder until then.
+# Install always wipes this stack’s image + volumes/DB before a fresh up.
+
+stack_name: myapp
+image_tag: myapp:latest
+compose_file: ../../../docker-compose.yml
+dockerfile: ../../../dockerfile
+docker_network: myapp-net
+internal_port: ""
+publish_port: ""
+delete_volume: "yes"
+delete_image: "yes"
+build_image_on: "local"  # local = build here and upload; server = build on remote
+
+ssh: "ssh <alias>"
+
+volume_dir: "/home/<user>/docker/myapp"

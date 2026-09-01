@@ -1,0 +1,10 @@
+# Local remove — copy to devmin/scripts/docker/<repo_name>/ and adapt.
+# Tear down this stack only: containers, volumes, image. No install.
+
+stack_name: myapp
+image_tag: myapp:latest
+compose_file: ../../../docker-compose.yml
+dockerfile: ../../../dockerfile
+docker_network: myapp-net
+delete_volume: "yes"
+delete_image: "yes"

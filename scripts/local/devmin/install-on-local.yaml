@@ -1,0 +1,5 @@
+target_repo: C:/Users/armin/GitHub/devmin
+stack_name: devmin
+internal_port: "8195"
+publish_port: "5195"
+postgres_port: "5455"

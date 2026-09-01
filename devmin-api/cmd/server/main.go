@@ -39,12 +39,11 @@ func main() {
 	}
 
 	flight := runner.NewFlight()
-	hotReload := runner.NewNativeRunner(cfg.NativeRunnerScript, cfg.NativeAppsConfig, cfg.NativeHotReloadScript)
-	localNative := runner.NewNativeRunner(cfg.NativeRunnerScript, cfg.NativeAppsConfig, "")
+	localNative := runner.NewNativeRunner(cfg.NativeRunnerScript, cfg.NativeAppsConfig)
 	localDocker := runner.NewDockerRunner(cfg.DockerRunnerScript, cfg.GitHubRoot)
 	serverDocker := runner.NewServerRunner()
 	bareServer := runner.NewBareServerRunner()
-	router := runner.NewRouter(hotReload, localNative, localDocker, serverDocker, bareServer, flight)
+	router := runner.NewRouter(localNative, localDocker, serverDocker, bareServer, flight)
 
 	appsSvc := apps.NewService(cfg, db, router)
 	stacksSvc := stacks.NewService(cfg, db)

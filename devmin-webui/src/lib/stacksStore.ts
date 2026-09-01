@@ -1,10 +1,9 @@
 import { ref, shallowRef } from 'vue'
 import { fetchStacks, type ApplicationDTO, type EndpointLine, type StackDTO } from '@/lib/api'
 
-export type GridChannel = 'hotReload' | 'local' | 'localDocker' | 'serverDocker' | 'server'
+export type GridChannel = 'local' | 'localDocker' | 'serverDocker' | 'server'
 
 export const GRID_CHANNELS: { id: GridChannel; label: string }[] = [
-  { id: 'hotReload', label: 'Hot-reload' },
   { id: 'local', label: 'Local' },
   { id: 'localDocker', label: 'Local Docker' },
   { id: 'serverDocker', label: 'Server Docker' },

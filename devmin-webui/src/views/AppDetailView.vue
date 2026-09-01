@@ -186,18 +186,8 @@ function channelAvailable(channel: Channel): boolean {
   return application.value.channels[channel]?.available ?? false
 }
 
-function channelEnabled(channel: Channel): boolean {
-  if (!application.value) return false
-  return application.value.channels[channel]?.enabled ?? false
-}
-
 function isJobRunning(channel: Channel, action: string): boolean {
   return activeJob.value?.channel === channel && activeJob.value?.action === action
-}
-
-function toggleHotReload() {
-  const action: ActionName = channelEnabled('hotReload') ? 'disable' : 'enable'
-  void runAction('hotReload', action)
 }
 
 function channelReason(channel: Channel): string {
@@ -241,38 +231,6 @@ watch(appId, () => load(), { immediate: true })
           {{ loading ? 'Refreshing…' : 'Refresh' }}
         </Button>
       </div>
-
-      <!-- Hot-reload -->
-      <Card :class="cn(!channelAvailable('hotReload') && 'opacity-60')">
-        <CardHeader class="pb-3">
-          <div class="flex flex-wrap items-center justify-between gap-2">
-            <CardTitle class="text-base">Hot-reload</CardTitle>
-            <Badge v-if="!channelAvailable('hotReload')" variant="outline" class="text-[10px]">
-              {{ channelReason('hotReload') }}
-            </Badge>
-          </div>
-        </CardHeader>
-        <CardContent class="space-y-4">
-          <div class="flex flex-wrap gap-2">
-            <Button
-              size="sm"
-              :variant="channelEnabled('hotReload') ? 'default' : 'outline'"
-              :disabled="busy || !channelAvailable('hotReload')"
-              @click="toggleHotReload"
-            >
-              <span
-                v-if="isJobRunning('hotReload', channelEnabled('hotReload') ? 'disable' : 'enable')"
-                class="mr-1 inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent"
-              />
-              {{ channelEnabled('hotReload') ? 'Enabled' : 'Disabled' }}
-            </Button>
-          </div>
-          <div class="rounded-md border bg-muted/30 px-3 py-2">
-            <p class="text-xs font-medium text-muted-foreground">Port</p>
-            <p class="text-sm font-mono">{{ displayPort }}</p>
-          </div>
-        </CardContent>
-      </Card>
 
       <!-- Local -->
       <Card :class="cn(!channelAvailable('local') && 'opacity-60')">

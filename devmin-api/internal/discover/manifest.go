@@ -142,7 +142,6 @@ func manifestToPair(p Project, m *manifestFile) *Pair {
 		if pair.Combined {
 			pair.WebUiStack = pair.ApiStack
 		}
-		pair.LocalCompose = findLocalCompose(pair.ApiDir)
 		pair.HasServerDeploy = hasServerDeploy(pair)
 	}
 	return &pair

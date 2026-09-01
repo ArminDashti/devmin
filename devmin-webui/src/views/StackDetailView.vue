@@ -22,7 +22,7 @@ const jobLog = ref('')
 const busy = ref(false)
 
 const channels: { id: Channel; label: string; actions: string[] }[] = [
-  { id: 'hotReload', label: 'Hot-reload', actions: ['enable', 'disable'] },
+  { id: 'local', label: 'Local', actions: ['install', 'uninstall', 'update', 'reinstall'] },
   { id: 'localDocker', label: 'Local Docker', actions: ['install', 'uninstall', 'update', 'reinstall'] },
   { id: 'serverDocker', label: 'Server Docker', actions: ['install', 'uninstall', 'update', 'reinstall'] },
   { id: 'server', label: 'Server', actions: ['install', 'uninstall', 'update', 'reinstall'] },

@@ -1,0 +1,14 @@
+# Local first-time install — copy to scripts/ and adapt.
+# Scripts read this file only (no CLI -- flags).
+# Install always wipes this project’s listed dep dirs before a clean install.
+
+project_name: myapp
+repo_root: ..
+api_dir: ../myapp-api
+webui_dir: ../myapp-webui
+package_manager: go,npm
+wipe_deps: "yes"
+wipe_local_db: "no"
+env_example: ../myapp-api/.env.example
+# Optional overrides (leave empty to use stack defaults in the .ps1):
+# install_commands: ""

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/ArminDashti/devmin-api/internal/config"
+	"github.com/ArminDashti/devmin-api/internal/deployscripts"
 	"github.com/ArminDashti/devmin-api/internal/discover"
 	"github.com/ArminDashti/devmin-api/internal/runmode"
 	"github.com/ArminDashti/devmin-api/internal/serverstate"
@@ -47,22 +48,25 @@ func (r *Resolver) ProjectDir(proj discover.Project, app *discover.Application) 
 	return proj.PrimaryDir()
 }
 
-func (r *Resolver) ScriptPath(channel runmode.Mode, projectDir string) (string, error) {
-	switch channel {
-	case runmode.HotReload:
-		if r.cfg.NativeHotReloadScript != "" {
-			if _, err := os.Stat(r.cfg.NativeHotReloadScript); err == nil {
-				return r.cfg.NativeHotReloadScript, nil
-			}
+func (r *Resolver) ScriptPath(channel runmode.Mode, action Action, proj discover.Project) (string, error) {
+	if isDeployAction(action) {
+		repo := deployscripts.RepoName(r.cfg.GitHubRoot, proj)
+		path, err := deployscripts.ScriptPath(r.cfg.DevminRoot, repo, channel, string(action))
+		if err == nil {
+			return path, nil
 		}
-		return "", fmt.Errorf("hot-reload script not configured")
+		return "", err
+	}
+
+	projectDir := proj.PrimaryDir()
+	switch channel {
 	case runmode.Local:
 		if r.cfg.NativeRunnerScript == "" {
 			return "", fmt.Errorf("native runner script not configured")
 		}
 		return r.cfg.NativeRunnerScript, nil
 	case runmode.LocalDocker:
-		p := filepath.Join(projectDir, ".armin", "docker-scripts", "run-on-docker-local.ps1")
+		p := legacyDockerLocalScript(projectDir)
 		if _, err := os.Stat(p); err != nil {
 			return "", fmt.Errorf("missing %s", p)
 		}
@@ -84,17 +88,25 @@ func (r *Resolver) ScriptPath(channel runmode.Mode, projectDir string) (string, 
 	}
 }
 
+func isDeployAction(action Action) bool {
+	switch action {
+	case ActionInstall, ActionUninstall, ActionUpdate, ActionReinstall:
+		return true
+	default:
+		return false
+	}
+}
+
+func legacyDockerLocalScript(projectDir string) string {
+	return filepath.Join(projectDir, ".armin", "docker-scripts", "run-on-docker-local.ps1")
+}
+
 func (r *Resolver) ExtraArgs(channel runmode.Mode, action Action, proj discover.Project, app *discover.Application) []string {
+	if isDeployAction(action) {
+		return nil
+	}
+
 	switch channel {
-	case runmode.HotReload:
-		switch action {
-		case ActionEnable:
-			return []string{"-Name", proj.Stem, "-SkipStopBeforeStart"}
-		case ActionDisable:
-			return []string{"-StopName", proj.Stem}
-		default:
-			return nil
-		}
 	case runmode.Local:
 		switch action {
 		case ActionEnable, ActionInstall, ActionUpdate, ActionReinstall:
@@ -122,8 +134,11 @@ func (r *Resolver) ExtraArgs(channel runmode.Mode, action Action, proj discover.
 	}
 }
 
-func (r *Resolver) RootArg(channel runmode.Mode) []string {
-	if (channel == runmode.HotReload || channel == runmode.Local) && r.cfg.GitHubRoot != "" {
+func (r *Resolver) RootArg(channel runmode.Mode, action Action) []string {
+	if isDeployAction(action) {
+		return nil
+	}
+	if channel == runmode.Local && r.cfg.GitHubRoot != "" {
 		return []string{"-Root", r.cfg.GitHubRoot}
 	}
 	return nil

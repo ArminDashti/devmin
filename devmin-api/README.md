@@ -10,7 +10,7 @@ Gin API for discovering local dev projects and running systematic deploy actions
 2. Copy `.env.example` → `.env`
 3. `go run ./cmd/server`
 
-### Docker dev (hot reload)
+### Docker dev (local compose for devmin itself)
 
 ```powershell
 docker network create t3-net   # if missing
@@ -42,12 +42,12 @@ Default login: `armin` / `dopadopa123`
 
 ### Channels
 
-- `hotReload` — actions: `enable`, `disable`
+- `local` — `install`, `uninstall`, `update`, `reinstall` (native host runner)
 - `localDocker` — `install`, `uninstall`, `update`, `reinstall`
 - `serverDocker` — same
 - `server` — same (uses `.armin/server-scripts/run-on-server.ps1`)
 
-Legacy `runMode` values `local` → `hotReload`, `server` → `serverDocker`.
+Legacy `runMode` value `hotReload` maps to `localDocker`. Legacy `server` maps to `serverDocker`.
 
 ## Discovery
 

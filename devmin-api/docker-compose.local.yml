@@ -1,4 +1,4 @@
-# Local Docker hot-reload: Postgres + Go Air API + Vite WebUI (bind mounts).
+# Local Docker dev stack for devmin itself (Postgres + API + WebUI).
 # Usage: docker compose -f docker-compose.local.yml -p devmin up -d --force-recreate
 name: devmin
 services:

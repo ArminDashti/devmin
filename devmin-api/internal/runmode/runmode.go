@@ -5,7 +5,6 @@ import "fmt"
 type Mode string
 
 const (
-	HotReload    Mode = "hotReload"
 	Local        Mode = "local"
 	LocalDocker  Mode = "localDocker"
 	ServerDocker Mode = "serverDocker"
@@ -14,8 +13,8 @@ const (
 
 func Parse(raw string) (Mode, error) {
 	switch raw {
-	case string(HotReload):
-		return HotReload, nil
+	case "hotReload": // legacy alias
+		return LocalDocker, nil
 	case string(Local):
 		return Local, nil
 	case string(LocalDocker):
@@ -25,7 +24,7 @@ func Parse(raw string) (Mode, error) {
 	case string(Server):
 		return Server, nil
 	default:
-		return "", fmt.Errorf("invalid channel %q (want hotReload, local, localDocker, serverDocker, or server)", raw)
+		return "", fmt.Errorf("invalid channel %q (want local, localDocker, serverDocker, or server)", raw)
 	}
 }
 
@@ -35,8 +34,6 @@ func Default() Mode {
 
 func (m Mode) Label() string {
 	switch m {
-	case HotReload:
-		return "Hot-reload"
 	case Local:
 		return "Local"
 	case LocalDocker:

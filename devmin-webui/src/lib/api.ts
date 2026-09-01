@@ -1,4 +1,4 @@
-export type Channel = 'hotReload' | 'local' | 'localDocker' | 'serverDocker' | 'server'
+export type Channel = 'local' | 'localDocker' | 'serverDocker' | 'server'
 
 export type ActionName =
   | 'enable'

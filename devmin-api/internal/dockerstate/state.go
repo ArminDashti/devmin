@@ -73,14 +73,7 @@ func RunningProjects() (map[string]bool, error) {
 	return projects, nil
 }
 
-func LocalProjectName(stem string) string {
-	return stem + "-local"
-}
-
 func OnDocker(stem, apiStack, webUiStack string, projects map[string]bool) bool {
-	if projects[LocalProjectName(stem)] {
-		return true
-	}
 	if projects[apiStack] {
 		return true
 	}

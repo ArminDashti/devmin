@@ -1,0 +1,18 @@
+stack_name: devmin
+server: irancell-t3
+ssh: ssh t3
+volume_dir: /cloud-admin/docker-volumes/devmin
+domain: devmin.xaigrok.ir
+docker_network: t3-net
+publish_port: ""
+delete_volume: "no"
+delete_image: "no"
+build_image_on: local
+api_image_tag: pc-armin/devmin-api:latest
+api_compose_file: ../../devmin-api/docker-compose.yml
+api_dockerfile: ../../devmin-api/dockerfile
+api_internal_port: "8195"
+webui_image_tag: pc-armin/devmin-webui:latest
+webui_compose_file: ../../devmin-webui/docker-compose.yml
+webui_dockerfile: ../../devmin-webui/Dockerfile
+webui_internal_port: "80"

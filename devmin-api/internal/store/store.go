@@ -27,11 +27,10 @@ type User struct {
 }
 
 type AppPreference struct {
-	HotReloadEnabled    bool
+	LocalEnabled        bool
 	LocalDockerEnabled  bool
 	ServerDockerEnabled bool
 	ServerEnabled       bool
-	LocalEnabled        bool
 	DockerEnabled       bool
 	PublicEnabled       bool
 }
@@ -65,6 +64,7 @@ func (s *Store) Migrate(ctx context.Context) error {
 		"migrations/002_app_run_mode.sql",
 		"migrations/003_app_mode_flags.sql",
 		"migrations/004_platform_channels.sql",
+		"migrations/005_remove_hot_reload_channel.sql",
 	} {
 		sqlBytes, err := migrationFS.ReadFile(name)
 		if err != nil {
@@ -101,15 +101,28 @@ func (s *Store) GetUserByUsername(ctx context.Context, username string) (*User, 
 	return &u, nil
 }
 
+func normalizePreference(pref AppPreference) AppPreference {
+	if !pref.ServerDockerEnabled && pref.PublicEnabled {
+		pref.ServerDockerEnabled = pref.PublicEnabled
+	}
+	if !pref.LocalDockerEnabled && pref.DockerEnabled {
+		pref.LocalDockerEnabled = pref.DockerEnabled
+	}
+	pref.DockerEnabled = pref.LocalDockerEnabled
+	pref.PublicEnabled = pref.ServerDockerEnabled
+	return pref
+}
+
 func (s *Store) GetAppPreference(ctx context.Context, stem string) (AppPreference, bool, error) {
 	var pref AppPreference
+	var legacyHotReload bool
 	err := s.pool.QueryRow(ctx, `
 		SELECT local_enabled, docker_enabled, public_enabled,
 		       hot_reload_enabled, server_docker_enabled, server_enabled
 		FROM app_preferences WHERE stem = $1
 	`, stem).Scan(
 		&pref.LocalEnabled, &pref.DockerEnabled, &pref.PublicEnabled,
-		&pref.HotReloadEnabled, &pref.ServerDockerEnabled, &pref.ServerEnabled,
+		&legacyHotReload, &pref.ServerDockerEnabled, &pref.ServerEnabled,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -117,16 +130,11 @@ func (s *Store) GetAppPreference(ctx context.Context, stem string) (AppPreferenc
 		}
 		return AppPreference{}, false, err
 	}
-	if !pref.HotReloadEnabled && pref.LocalEnabled {
-		pref.HotReloadEnabled = pref.LocalEnabled
+	if legacyHotReload && !pref.LocalDockerEnabled {
+		pref.LocalDockerEnabled = true
+		pref.DockerEnabled = true
 	}
-	if !pref.ServerDockerEnabled && pref.PublicEnabled {
-		pref.ServerDockerEnabled = pref.PublicEnabled
-	}
-	if !pref.LocalDockerEnabled && pref.DockerEnabled {
-		pref.LocalDockerEnabled = pref.DockerEnabled
-	}
-	return pref, true, nil
+	return normalizePreference(pref), true, nil
 }
 
 func (s *Store) SetModeEnabled(ctx context.Context, stem string, mode runmode.Mode, enabled bool) error {
@@ -135,8 +143,6 @@ func (s *Store) SetModeEnabled(ctx context.Context, stem string, mode runmode.Mo
 		return err
 	}
 	switch mode {
-	case runmode.HotReload:
-		pref.HotReloadEnabled = enabled
 	case runmode.Local:
 		pref.LocalEnabled = enabled
 	case runmode.LocalDocker:
@@ -156,6 +162,7 @@ func (s *Store) SetModeEnabled(ctx context.Context, stem string, mode runmode.Mo
 }
 
 func (s *Store) SetAppPreference(ctx context.Context, stem string, pref AppPreference) error {
+	pref = normalizePreference(pref)
 	legacyMode := runmode.Default()
 	legacyEnabled := false
 	if pref.ServerEnabled {
@@ -167,9 +174,6 @@ func (s *Store) SetAppPreference(ctx context.Context, stem string, pref AppPrefe
 	} else if pref.LocalDockerEnabled {
 		legacyMode = runmode.LocalDocker
 		legacyEnabled = true
-	} else if pref.HotReloadEnabled {
-		legacyMode = runmode.HotReload
-		legacyEnabled = true
 	} else if pref.LocalEnabled {
 		legacyMode = runmode.Local
 		legacyEnabled = true
@@ -180,12 +184,12 @@ func (s *Store) SetAppPreference(ctx context.Context, stem string, pref AppPrefe
 			hot_reload_enabled, server_docker_enabled, server_enabled,
 			enabled, run_mode, updated_at
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+		VALUES ($1, $2, $3, $4, false, $5, $6, $7, $8, NOW())
 		ON CONFLICT (stem) DO UPDATE SET
 			local_enabled = EXCLUDED.local_enabled,
 			docker_enabled = EXCLUDED.docker_enabled,
 			public_enabled = EXCLUDED.public_enabled,
-			hot_reload_enabled = EXCLUDED.hot_reload_enabled,
+			hot_reload_enabled = false,
 			server_docker_enabled = EXCLUDED.server_docker_enabled,
 			server_enabled = EXCLUDED.server_enabled,
 			enabled = EXCLUDED.enabled,
@@ -193,7 +197,7 @@ func (s *Store) SetAppPreference(ctx context.Context, stem string, pref AppPrefe
 			updated_at = NOW()
 	`, stem,
 		pref.LocalEnabled, pref.DockerEnabled, pref.PublicEnabled,
-		pref.HotReloadEnabled, pref.ServerDockerEnabled, pref.ServerEnabled,
+		pref.ServerDockerEnabled, pref.ServerEnabled,
 		legacyEnabled, string(legacyMode),
 	)
 	return err
@@ -213,23 +217,19 @@ func (s *Store) ListAppPreferences(ctx context.Context) (map[string]AppPreferenc
 	for rows.Next() {
 		var stem string
 		var pref AppPreference
+		var legacyHotReload bool
 		if err := rows.Scan(
 			&stem,
 			&pref.LocalEnabled, &pref.DockerEnabled, &pref.PublicEnabled,
-			&pref.HotReloadEnabled, &pref.ServerDockerEnabled, &pref.ServerEnabled,
+			&legacyHotReload, &pref.ServerDockerEnabled, &pref.ServerEnabled,
 		); err != nil {
 			return nil, err
 		}
-		if !pref.HotReloadEnabled && pref.LocalEnabled {
-			pref.HotReloadEnabled = pref.LocalEnabled
+		if legacyHotReload && !pref.LocalDockerEnabled {
+			pref.LocalDockerEnabled = true
+			pref.DockerEnabled = true
 		}
-		if !pref.ServerDockerEnabled && pref.PublicEnabled {
-			pref.ServerDockerEnabled = pref.PublicEnabled
-		}
-		if !pref.LocalDockerEnabled && pref.DockerEnabled {
-			pref.LocalDockerEnabled = pref.DockerEnabled
-		}
-		out[stem] = pref
+		out[stem] = normalizePreference(pref)
 	}
 	return out, rows.Err()
 }

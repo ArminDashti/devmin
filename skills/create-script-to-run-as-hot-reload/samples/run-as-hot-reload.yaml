@@ -1,0 +1,13 @@
+# Local host hot-reload — copy to devmin/scripts/local/<repo_name>/ and adapt.
+# Scripts read this file only (no CLI -- flags).
+# Paths are relative to target_repo unless noted
+
+project_name: myapp
+api_dir: ../../../myapp-api
+webui_dir: ../../../myapp-webui
+api_port: "8171"
+webui_port: "5173"
+api_command: air -c .air.toml
+webui_command: npm run dev -- --host 0.0.0.0 --port 5173 --strictPort
+cors_origin: ""
+pid_file: run-as-hot-reload.pids

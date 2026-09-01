@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
-	"strings"
 
 	"github.com/ArminDashti/devmin-api/internal/config"
+	"github.com/ArminDashti/devmin-api/internal/deployscripts"
 	"github.com/ArminDashti/devmin-api/internal/discover"
 	"github.com/ArminDashti/devmin-api/internal/dockerstate"
 	"github.com/ArminDashti/devmin-api/internal/hostip"
@@ -70,7 +70,7 @@ func (s *Service) List(ctx context.Context) ([]Row, error) {
 	if err != nil {
 		return nil, err
 	}
-	nativeState, err := nativestate.ReadMergedState(s.cfg.NativeStatePath, s.cfg.NativeHotReloadStatePath)
+	nativeState, err := nativestate.ReadState(s.cfg.NativeStatePath)
 	if err != nil {
 		return nil, err
 	}
@@ -126,12 +126,28 @@ func (s *Service) buildRow(
 		pref = v
 	} else {
 		// Infer from live state when no DB preference exists.
-		pref.HotReloadEnabled = nativestate.OnLocal(nativeState, p.Stem)
+		pref.LocalEnabled = nativestate.OnLocal(nativeState, p.Stem)
 		pref.LocalDockerEnabled = dockerstate.OnDocker(p.Stem, p.ApiStack, p.WebUiStack, projects)
 	}
 
 	onDocker := dockerstate.OnDocker(p.Stem, p.ApiStack, p.WebUiStack, projects)
 	onLocal := nativestate.OnLocal(nativeState, p.Stem)
+
+	repo := deployscripts.RepoName(s.cfg.GitHubRoot, discover.Project{Stem: p.Stem, RootDir: p.ApiDir, Pair: &p})
+	if cfg, err := deployscripts.ReadConfig(s.cfg.DevminRoot, repo, runmode.LocalDocker, "install"); err == nil {
+		if deployscripts.OnLocalDocker(cfg, projects, p.Stem) {
+			onDocker = true
+		}
+	}
+	if cfg, err := deployscripts.ReadConfig(s.cfg.DevminRoot, repo, runmode.Local, "install"); err == nil {
+		if deployscripts.OnLocalNative(cfg) {
+			onLocal = true
+		}
+	} else if deployscripts.HasChannel(s.cfg.DevminRoot, s.cfg.GitHubRoot, discover.Project{Stem: p.Stem, RootDir: p.ApiDir, Pair: &p}, runmode.Local) {
+		if probe.PortListening("127.0.0.1", p.ApiInternalPort) || probe.PortListening("127.0.0.1", p.WebUiInternalPort) {
+			onLocal = true
+		}
+	}
 
 	externalHost := hostip.Resolve(s.cfg.HostIP)
 
@@ -153,27 +169,18 @@ func (s *Service) buildRow(
 		dockerApiURL = st.ApiURL
 		dockerWebuiURL = st.WebUiURL
 	}
+	if cfg, err := deployscripts.ReadConfig(s.cfg.DevminRoot, repo, runmode.LocalDocker, "install"); err == nil {
+		apiP, webP := deployscripts.LocalDockerPorts(cfg, p.ApiInternalPort, p.WebUiInternalPort)
+		if apiP > 0 {
+			dockerApiPort = apiP
+		}
+		if webP > 0 {
+			dockerWebuiPort = webP
+		}
+	}
 	dockerApiURL = urlOrPort(externalHost, dockerApiPort, dockerApiURL)
 	dockerWebuiURL = urlOrPort(externalHost, dockerWebuiPort, dockerWebuiURL)
 
-	// Prefer local-docker-hot-reload project ports / pc-armin URL when that stack is up.
-	localProj := dockerstate.LocalProjectName(p.Stem)
-	if projects[localProj] {
-		lpApi, lpWeb := dockerstate.HostPortsForProject(localProj)
-		if lpApi > 0 {
-			dockerApiPort = lpApi
-			dockerApiURL = urlOrPort(externalHost, lpApi, "")
-		}
-		if lpWeb > 0 {
-			dockerWebuiPort = lpWeb
-		}
-		if s.cfg.PcArminBase != "" {
-			dockerWebuiURL = strings.TrimRight(s.cfg.PcArminBase, "/") + "/" + p.Stem + "/"
-		} else if lpWeb > 0 {
-			dockerWebuiURL = urlOrPort(externalHost, lpWeb, "")
-		}
-		onDocker = true
-	}
 	dockerStatus := "Down"
 	if modeUp(dockerWebuiPort, s.cfg.HostIP, false) == "UP" ||
 		modeUp(dockerApiPort, s.cfg.HostIP, dockerWebuiPort == 0) == "UP" ||
@@ -184,18 +191,38 @@ func (s *Service) buildRow(
 	// Public URLs
 	publicApiURL, publicWebuiURL := "", ""
 	onServer := false
-	if p.HasServerDeploy {
-		if cfg, err := serverstate.ReadDeployConfig(p.ApiDir); err == nil {
+	hasServerDeploy := p.HasServerDeploy
+	if deployscripts.HasChannel(s.cfg.DevminRoot, s.cfg.GitHubRoot, discover.Project{Stem: p.Stem, RootDir: p.ApiDir, Pair: &p}, runmode.ServerDocker) {
+		hasServerDeploy = true
+	}
+	if hasServerDeploy {
+		if cfg, err := deployscripts.ReadConfig(s.cfg.DevminRoot, repo, runmode.ServerDocker, "install"); err == nil {
+			if dc, ok := deployscripts.ServerDockerDeployConfig(cfg); ok {
+				publicApiURL = serverstate.PublicURL(dc.StackName)
+				if serverstate.OnServer(dc, 5) {
+					onServer = true
+				}
+			}
+		} else if cfg, err := serverstate.ReadDeployConfig(p.ApiDir); err == nil {
 			publicApiURL = serverstate.PublicURL(cfg.StackName)
 			if serverstate.OnServer(cfg, 5) {
 				onServer = true
 			}
 		}
-		if !p.Combined && p.WebUiDir != "" && serverstate.HasValidServerDeploy(p.WebUiDir) {
-			if cfg, err := serverstate.ReadDeployConfig(p.WebUiDir); err == nil {
-				publicWebuiURL = serverstate.PublicURL(cfg.StackName)
-				if serverstate.OnServer(cfg, 5) {
-					onServer = true
+		if !p.Combined && p.WebUiDir != "" {
+			if cfg, err := deployscripts.ReadConfig(s.cfg.DevminRoot, repo, runmode.ServerDocker, "install"); err == nil {
+				if dc, ok := deployscripts.ServerDockerDeployConfig(cfg); ok {
+					publicWebuiURL = serverstate.PublicURL(dc.StackName)
+					if serverstate.OnServer(dc, 5) {
+						onServer = true
+					}
+				}
+			} else if serverstate.HasValidServerDeploy(p.WebUiDir) {
+				if cfg, err := serverstate.ReadDeployConfig(p.WebUiDir); err == nil {
+					publicWebuiURL = serverstate.PublicURL(cfg.StackName)
+					if serverstate.OnServer(cfg, 5) {
+						onServer = true
+					}
 				}
 			}
 		}
@@ -222,7 +249,7 @@ func (s *Service) buildRow(
 		WebUiApp:          p.WebUiName,
 		ApiInternalPort:   p.ApiInternalPort,
 		WebUiInternalPort: p.WebUiInternalPort,
-		LocalEnabled:      pref.HotReloadEnabled,
+		LocalEnabled:      pref.LocalEnabled,
 		DockerEnabled:     pref.LocalDockerEnabled,
 		PublicEnabled:     pref.ServerDockerEnabled,
 		LocalApiURL:       localApiURL,
@@ -234,7 +261,7 @@ func (s *Service) buildRow(
 		PublicApiURL:      publicApiURL,
 		PublicWebUiURL:    publicWebuiURL,
 		PublicStatus:      publicStatus,
-		HasServerDeploy:   p.HasServerDeploy,
+		HasServerDeploy:   hasServerDeploy,
 		OnLocal:           onLocal,
 		OnDocker:          onDocker,
 		OnServer:          onServer,
@@ -258,7 +285,7 @@ func (s *Service) UpdateApp(ctx context.Context, stem string, req UpdateRequest)
 		return fmt.Errorf("app not found: %s", stem)
 	}
 	pair := proj.Pair
-	if mode == runmode.LocalDocker && pair.SkipReason != "" && pair.LocalCompose == "" {
+	if mode == runmode.LocalDocker && pair.SkipReason != "" {
 		return fmt.Errorf("cannot use docker for %s: %s", stem, pair.SkipReason)
 	}
 	if mode == runmode.ServerDocker && !pair.HasServerDeploy {

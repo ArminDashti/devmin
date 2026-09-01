@@ -17,20 +17,18 @@ type ModeRunner interface {
 // Router dispatches start/stop by channel and tracks in-flight actions.
 type Router struct {
 	flight       *Flight
-	hotReload    ModeRunner
 	local        ModeRunner
 	localDocker  ModeRunner
 	serverDocker ModeRunner
 	server       ModeRunner
 }
 
-func NewRouter(hotReload, local, localDocker, serverDocker, server ModeRunner, flight *Flight) *Router {
+func NewRouter(local, localDocker, serverDocker, server ModeRunner, flight *Flight) *Router {
 	if flight == nil {
 		flight = NewFlight()
 	}
 	return &Router{
 		flight:       flight,
-		hotReload:    hotReload,
 		local:        local,
 		localDocker:  localDocker,
 		serverDocker: serverDocker,
@@ -72,8 +70,6 @@ func (r *Router) withFlight(stem string, fn func() error) error {
 
 func (r *Router) forMode(mode runmode.Mode) (ModeRunner, error) {
 	switch mode {
-	case runmode.HotReload:
-		return r.hotReload, nil
 	case runmode.Local:
 		return r.local, nil
 	case runmode.LocalDocker:

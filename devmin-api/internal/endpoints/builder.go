@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/ArminDashti/devmin-api/internal/config"
+	"github.com/ArminDashti/devmin-api/internal/deployscripts"
 	"github.com/ArminDashti/devmin-api/internal/discover"
 	"github.com/ArminDashti/devmin-api/internal/dockerstate"
 	"github.com/ArminDashti/devmin-api/internal/hostip"
@@ -67,21 +68,32 @@ func (b *Builder) ForApplication(proj discover.Project, app discover.Application
 	return dedupeLines(lines)
 }
 
-func nativeChannel(proj discover.Project) runmode.Mode {
-	if proj.Type == discover.ProjectTypeWindows {
-		return runmode.Local
+func (b *Builder) nativeLines(proj discover.Project, app discover.Application) []Line {
+	repo := deployscripts.RepoName(b.cfg.GitHubRoot, proj)
+	if cfg, err := deployscripts.ReadConfig(b.cfg.DevminRoot, repo, runmode.Local, "install"); err == nil {
+		apiPort, webuiPort := deployscripts.LocalDockerPorts(cfg, app.InternalPort, 0)
+		var url string
+		var port int
+		switch app.Role {
+		case "api":
+			port = apiPort
+		case "webui", "web", "ui":
+			port = webuiPort
+		default:
+			port = app.InternalPort
+		}
+		if port > 0 {
+			url = fmt.Sprintf("http://127.0.0.1:%d/", port)
+			return []Line{{Channel: string(runmode.Local), URL: url, Status: portStatus(port)}}
+		}
 	}
 	if proj.Pair != nil && (proj.Type == discover.ProjectTypeSplit || proj.Type == discover.ProjectTypeCombinedApiWebui) {
-		return runmode.HotReload
+		return nil
 	}
-	return runmode.Local
+	return b.nativeLinesForChannel(proj.Stem, app.Role, app.InternalPort, runmode.Local)
 }
 
-func (b *Builder) nativeLines(proj discover.Project, app discover.Application) []Line {
-	return b.nativeLinesForChannel(proj.Stem, app.Role, app.Dir, app.InternalPort, nativeChannel(proj))
-}
-
-func (b *Builder) nativeLinesForChannel(stem, role, appDir string, fallbackPort int, channel runmode.Mode) []Line {
+func (b *Builder) nativeLinesForChannel(stem, role string, fallbackPort int, channel runmode.Mode) []Line {
 	apiPort, webuiPort, apiURL, webuiURL := nativestate.PortsForStem(b.nativeState, stem)
 	var url string
 	var port int
@@ -92,7 +104,7 @@ func (b *Builder) nativeLinesForChannel(stem, role, appDir string, fallbackPort 
 		if url == "" && port > 0 {
 			url = fmt.Sprintf("http://127.0.0.1:%d/", port)
 		}
-		if port == 0 && channel != runmode.HotReload && fallbackPort > 0 {
+		if port == 0 && fallbackPort > 0 {
 			port = fallbackPort
 			url = fmt.Sprintf("http://127.0.0.1:%d/", port)
 		}
@@ -102,20 +114,12 @@ func (b *Builder) nativeLinesForChannel(stem, role, appDir string, fallbackPort 
 		if url == "" && port > 0 {
 			url = fmt.Sprintf("http://127.0.0.1:%d/", port)
 		}
-		if port == 0 && channel != runmode.HotReload && fallbackPort > 0 {
+		if port == 0 && fallbackPort > 0 {
 			port = fallbackPort
 			url = fmt.Sprintf("http://127.0.0.1:%d/", port)
 		}
 	default:
-		if channel != runmode.HotReload {
-			port = fallbackPort
-			if port > 0 {
-				url = fmt.Sprintf("http://127.0.0.1:%d/", port)
-			}
-		}
-	}
-	if port == 0 && channel == runmode.HotReload {
-		port = hotReloadProbePort(appDir, fallbackPort)
+		port = fallbackPort
 		if port > 0 {
 			url = fmt.Sprintf("http://127.0.0.1:%d/", port)
 		}
@@ -130,26 +134,35 @@ func (b *Builder) nativeLinesForChannel(stem, role, appDir string, fallbackPort 
 	}}
 }
 
-// hotReloadProbePort picks a host port for hot-reload when runner state is missing.
-// Prefer publish_port from docker yaml; otherwise use internal port only if it is listening
-// (avoids treating container nginx port 80 as a dev endpoint).
-func hotReloadProbePort(appDir string, internalPort int) int {
-	if p := discover.ResolvePublishPort(appDir); p > 0 && probe.PortListening("127.0.0.1", p) {
-		return p
-	}
-	if internalPort > 0 && internalPort != 80 && probe.PortListening("127.0.0.1", internalPort) {
-		return internalPort
-	}
-	return 0
-}
-
 func (b *Builder) localDockerLines(pair discover.Pair, role string) []Line {
+	repo := deployscripts.RepoName(b.cfg.GitHubRoot, discover.Project{Stem: pair.Stem, RootDir: pair.ApiDir, Pair: &pair})
+	var deployCfg deployscripts.FlatConfig
+	if cfg, err := deployscripts.ReadConfig(b.cfg.DevminRoot, repo, runmode.LocalDocker, "install"); err == nil {
+		deployCfg = cfg
+	}
+
 	row := dockerstate.RowByStem(b.dockerState, pair.Stem)
 	onDocker := dockerstate.OnDocker(pair.Stem, pair.ApiStack, pair.WebUiStack, b.projects)
-	localProject := dockerstate.LocalProjectName(pair.Stem)
-	apiPort, webuiPort := dockerstate.HostPortsForProject(localProject)
-	if apiPort == 0 && webuiPort == 0 {
-		apiPort, webuiPort = dockerstate.HostPortsForProject(pair.ApiStack)
+	if deployCfg != nil {
+		if deployscripts.OnLocalDocker(deployCfg, b.projects, pair.Stem) {
+			onDocker = true
+		}
+	}
+	apiPort, _ := dockerstate.HostPortsForProject(pair.ApiStack)
+	webuiPort := 0
+	if pair.Combined {
+		_, webuiPort = dockerstate.HostPortsForProject(pair.ApiStack)
+	} else if pair.WebUiStack != "" {
+		_, webuiPort = dockerstate.HostPortsForProject(pair.WebUiStack)
+	}
+	if deployCfg != nil {
+		cfgAPI, cfgWeb := deployscripts.LocalDockerPorts(deployCfg, pair.ApiInternalPort, pair.WebUiInternalPort)
+		if cfgAPI > 0 {
+			apiPort = cfgAPI
+		}
+		if cfgWeb > 0 {
+			webuiPort = cfgWeb
+		}
 	}
 	var url string
 	var port int
@@ -187,6 +200,21 @@ func (b *Builder) localDockerLines(pair discover.Pair, role string) []Line {
 }
 
 func (b *Builder) serverDockerLines(pair discover.Pair, role string) []Line {
+	repo := deployscripts.RepoName(b.cfg.GitHubRoot, discover.Project{Stem: pair.Stem, RootDir: pair.ApiDir, Pair: &pair})
+	if cfg, err := deployscripts.ReadConfig(b.cfg.DevminRoot, repo, runmode.ServerDocker, "install"); err == nil {
+		if dc, ok := deployscripts.ServerDockerDeployConfig(cfg); ok {
+			url := serverstate.PublicURL(dc.StackName)
+			if url == "" {
+				return nil
+			}
+			onServer := serverstate.OnServer(dc, b.cfg.ServerSSHTimeoutSec)
+			status := "Down"
+			if onServer {
+				status = "UP"
+			}
+			return []Line{{Channel: string(runmode.ServerDocker), URL: url, Status: status}}
+		}
+	}
 	cfg, err := serverstate.ReadDeployConfig(pair.ApiDir)
 	if err != nil {
 		return nil
@@ -207,6 +235,19 @@ func (b *Builder) serverDockerLines(pair discover.Pair, role string) []Line {
 }
 
 func (b *Builder) serverLines(pair discover.Pair, role string) []Line {
+	repo := deployscripts.RepoName(b.cfg.GitHubRoot, discover.Project{Stem: pair.Stem, RootDir: pair.ApiDir, Pair: &pair})
+	if cfg, err := deployscripts.ReadConfig(b.cfg.DevminRoot, repo, runmode.Server, "install"); err == nil {
+		if bc, ok := deployscripts.BareServerDeployConfig(cfg); ok {
+			url := bc.PublicURL
+			if url == "" {
+				url = serverstate.PublicURL(bc.StackName)
+			}
+			if url == "" {
+				return nil
+			}
+			return []Line{{Channel: string(runmode.Server), URL: url, Status: "Down"}}
+		}
+	}
 	scriptDir := pair.ApiDir
 	if role == "webui" && pair.WebUiDir != "" {
 		scriptDir = pair.WebUiDir

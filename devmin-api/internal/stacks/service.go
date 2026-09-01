@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/ArminDashti/devmin-api/internal/config"
+	"github.com/ArminDashti/devmin-api/internal/deployscripts"
 	"github.com/ArminDashti/devmin-api/internal/discover"
 	"github.com/ArminDashti/devmin-api/internal/dockerparams"
 	"github.com/ArminDashti/devmin-api/internal/dockerstate"
@@ -56,7 +57,7 @@ func (s *Service) loadContext(ctx context.Context) ([]discover.Project, *dockers
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
 	}
-	nativeState, err := nativestate.ReadMergedState(s.cfg.NativeStatePath, s.cfg.NativeHotReloadStatePath)
+	nativeState, err := nativestate.ReadState(s.cfg.NativeStatePath)
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
 	}
@@ -143,19 +144,17 @@ func (s *Service) buildApp(proj discover.Project, app discover.Application, ep *
 		Stem:         app.Stem,
 		InternalPort: app.InternalPort,
 		Endpoints:    ep.ForApplication(proj, app),
-		Channels:     channelStates(proj, app, pref),
+		Channels:     s.channelStates(proj, app, pref),
 	}
 }
 
-func channelStates(proj discover.Project, app discover.Application, pref store.AppPreference) map[string]ChannelState {
-	hrAvail := supportsHotReload(proj)
-	localAvail := supportsLocalNative(proj)
+func (s *Service) channelStates(proj discover.Project, app discover.Application, pref store.AppPreference) map[string]ChannelState {
+	localAvail := deployscripts.HasChannel(s.cfg.DevminRoot, s.cfg.GitHubRoot, proj, runmode.Local) || supportsLocalNative(proj)
 	out := map[string]ChannelState{
-		string(runmode.HotReload):    {Enabled: pref.HotReloadEnabled, Available: hrAvail},
 		string(runmode.Local):        {Enabled: pref.LocalEnabled, Available: localAvail},
-		string(runmode.LocalDocker):  {Enabled: pref.LocalDockerEnabled, Available: true},
-		string(runmode.ServerDocker): {Enabled: pref.ServerDockerEnabled, Available: false},
-		string(runmode.Server):       {Enabled: pref.ServerEnabled, Available: false},
+		string(runmode.LocalDocker):  {Enabled: pref.LocalDockerEnabled, Available: deployscripts.HasChannel(s.cfg.DevminRoot, s.cfg.GitHubRoot, proj, runmode.LocalDocker)},
+		string(runmode.ServerDocker): {Enabled: pref.ServerDockerEnabled, Available: deployscripts.HasChannel(s.cfg.DevminRoot, s.cfg.GitHubRoot, proj, runmode.ServerDocker)},
+		string(runmode.Server):       {Enabled: pref.ServerEnabled, Available: deployscripts.HasChannel(s.cfg.DevminRoot, s.cfg.GitHubRoot, proj, runmode.Server)},
 	}
 	if proj.Type == discover.ProjectTypeWindows {
 		out[string(runmode.LocalDocker)] = ChannelState{Available: false, Reason: "Windows app"}
@@ -167,58 +166,68 @@ func channelStates(proj discover.Project, app discover.Application, pref store.A
 	if pair == nil {
 		return out
 	}
-	if pair.SkipReason != "" && pair.LocalCompose == "" {
+	if pair.SkipReason != "" && !out[string(runmode.LocalDocker)].Available {
 		out[string(runmode.LocalDocker)] = ChannelState{
 			Enabled:   pref.LocalDockerEnabled,
 			Available: false,
 			Reason:    pair.SkipReason,
 		}
 	}
-	if !pair.HasServerDeploy {
-		out[string(runmode.ServerDocker)] = ChannelState{
-			Enabled:   pref.ServerDockerEnabled,
-			Available: false,
-			Reason:    "Server Docker scripts missing",
-		}
-	} else {
-		out[string(runmode.ServerDocker)] = ChannelState{
-			Enabled:   pref.ServerDockerEnabled,
-			Available: true,
-		}
-	}
-	bareDir := app.Dir
-	if bareDir == "" {
-		bareDir = pair.ApiDir
-	}
-	if serverstate.HasBareServerDeploy(bareDir) {
-		out[string(runmode.Server)] = ChannelState{
-			Enabled:   pref.ServerEnabled,
-			Available: true,
-		}
-	} else {
-		out[string(runmode.Server)] = ChannelState{
-			Enabled:   pref.ServerEnabled,
-			Available: false,
-			Reason:    "Server scripts missing",
-		}
-	}
-	_, err := dockerparams.Read(bareDir, dockerparams.TargetLocal)
-	if err != nil && pair.LocalCompose == "" {
-		if out[string(runmode.LocalDocker)].Available {
+	if !out[string(runmode.LocalDocker)].Available {
+		_, err := dockerparams.Read(app.Dir, dockerparams.TargetLocal)
+		if err == nil {
 			out[string(runmode.LocalDocker)] = ChannelState{
+				Enabled:   pref.LocalDockerEnabled,
+				Available: true,
+			}
+		} else if out[string(runmode.LocalDocker)].Reason == "" {
+			out[string(runmode.LocalDocker)] = ChannelState{
+				Enabled:   pref.LocalDockerEnabled,
 				Available: false,
-				Reason:    "No local docker config",
+				Reason:    "No local docker deploy script",
 			}
 		}
 	}
-	return out
-}
-
-func supportsHotReload(proj discover.Project) bool {
-	if proj.Type == discover.ProjectTypeWindows {
-		return false
+	if !out[string(runmode.ServerDocker)].Available {
+		if pair.HasServerDeploy {
+			out[string(runmode.ServerDocker)] = ChannelState{
+				Enabled:   pref.ServerDockerEnabled,
+				Available: true,
+			}
+		} else if out[string(runmode.ServerDocker)].Reason == "" {
+			out[string(runmode.ServerDocker)] = ChannelState{
+				Enabled:   pref.ServerDockerEnabled,
+				Available: false,
+				Reason:    "Server Docker deploy script missing",
+			}
+		}
 	}
-	return proj.Pair != nil && (proj.Type == discover.ProjectTypeSplit || proj.Type == discover.ProjectTypeCombinedApiWebui)
+	if !out[string(runmode.Server)].Available {
+		bareDir := app.Dir
+		if bareDir == "" && pair != nil {
+			bareDir = pair.ApiDir
+		}
+		if serverstate.HasBareServerDeploy(bareDir) {
+			out[string(runmode.Server)] = ChannelState{
+				Enabled:   pref.ServerEnabled,
+				Available: true,
+			}
+		} else if out[string(runmode.Server)].Reason == "" {
+			out[string(runmode.Server)] = ChannelState{
+				Enabled:   pref.ServerEnabled,
+				Available: false,
+				Reason:    "Server deploy script missing",
+			}
+		}
+	}
+	if !out[string(runmode.Local)].Available && out[string(runmode.Local)].Reason == "" {
+		out[string(runmode.Local)] = ChannelState{
+			Enabled:   pref.LocalEnabled,
+			Available: false,
+			Reason:    "Local deploy script missing",
+		}
+	}
+	return out
 }
 
 func supportsLocalNative(proj discover.Project) bool {

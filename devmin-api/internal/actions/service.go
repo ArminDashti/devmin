@@ -40,8 +40,7 @@ func (s *Service) Run(ctx context.Context, req Request) (*scripts.Job, error) {
 		return nil, fmt.Errorf("action already in progress for %s", proj.Stem)
 	}
 
-	projectDir := s.resolver.ProjectDir(*proj, app)
-	scriptPath, err := s.resolver.ScriptPath(req.Channel, projectDir)
+	scriptPath, err := s.resolver.ScriptPath(req.Channel, req.Action, *proj)
 	if err != nil {
 		return nil, err
 	}
@@ -57,14 +56,14 @@ func (s *Service) Run(ctx context.Context, req Request) (*scripts.Job, error) {
 			return nil, err
 		}
 		args := s.resolver.ExtraArgs(req.Channel, req.Action, *proj, app)
-		args = append(s.resolver.RootArg(req.Channel), args...)
+		args = append(s.resolver.RootArg(req.Channel, req.Action), args...)
 		return s.invoker.RunScript(ctx, proj.Stem, appID, string(req.Channel), req.Action, scriptPath, args)
 	case scripts.ActionDisable:
 		if err := s.setEnabled(ctx, proj.Stem, req.Channel, false); err != nil {
 			return nil, err
 		}
 		args := s.resolver.ExtraArgs(req.Channel, req.Action, *proj, app)
-		args = append(s.resolver.RootArg(req.Channel), args...)
+		args = append(s.resolver.RootArg(req.Channel, req.Action), args...)
 		return s.invoker.RunScript(ctx, proj.Stem, appID, string(req.Channel), req.Action, scriptPath, args)
 	case scripts.ActionInstall, scripts.ActionUpdate, scripts.ActionReinstall, scripts.ActionUninstall:
 		if req.Action == scripts.ActionInstall || req.Action == scripts.ActionReinstall {

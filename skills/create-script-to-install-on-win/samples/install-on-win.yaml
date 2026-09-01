@@ -1,0 +1,13 @@
+# Local install-on-win — copy to devmin/scripts/local/<repo_name>/ and adapt.
+# Scripts read this file only (no CLI -- flags).
+# Refreshes deps in place; does not wipe .env or local DB.
+# Paths are relative to target_repo unless noted
+
+project_name: myapp
+repo_root: ../../..
+api_dir: ../../../myapp-api
+webui_dir: ../../../myapp-webui
+package_manager: go,npm
+wipe_deps: "no"
+wipe_local_db: "no"
+env_example: ../../../myapp-api/.env.example
