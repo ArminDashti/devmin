@@ -1,0 +1,12 @@
+stack_name: devmin
+compose_file: ../../devmin-api/docker-compose.prod.yml
+dockerfile: ../../devmin-api/dockerfile
+docker_network: t3-net
+internal_port: "8195"
+publish_port: "5195"
+api_image_tag: pc-armin/devmin-api:latest
+webui_image_tag: pc-armin/devmin-webui:latest
+delete_volume: "yes"
+delete_image: "yes"
+build_image_on: local
+volume_dir: ""
