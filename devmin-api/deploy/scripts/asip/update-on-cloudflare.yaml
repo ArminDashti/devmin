@@ -1,0 +1,11 @@
+target_repo: C:/Users/armin/GitHub/asip
+api_worker_root: asip-api/cloudflare
+api_worker_name: asip-api
+webui_worker_root: asip-webui
+webui_worker_name: asip
+d1_database_name: asip
+d1_database_id: 0bd20123-61ba-494e-ada1-27eb4fdb971a
+api_url: https://asip-api.armindashti.workers.dev
+webui_url: https://asip.armindashti.workers.dev
+workers_dev_suffix: armindashti.workers.dev
+webui_build_command: npm run build

@@ -1,0 +1,11 @@
+project_name: <project>
+target_repo: C:/Users/armin/GitHub/<project>
+api_dir: <api-subdir>
+webui_dir: <webui-subdir>
+stack_name: <stack>
+api_port: "8100"
+webui_port: "5100"
+postgres_port: "5432"
+state_dir: .armin/state
+postgres_container: <stack>-postgres-native
+postgres_volume: <stack>-postgres-native-data

@@ -1,0 +1,8 @@
+target_repo: C:/Users/armin/GitHub/<project>
+stack_name: <stack>
+compose_file: docker-compose.yml
+dockerfile: Dockerfile
+image_tag: <stack>:local
+docker_network: <stack>-net
+internal_port: "8080"
+publish_port: "8080"

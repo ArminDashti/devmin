@@ -11,3 +11,7 @@ devmin-api/tmp/server
 devmin-api/tmp/**
 # large files (>5MB) - do not commit
 devmin-api/devmin-api.exe
+
+# auto-managed: files > 5MB
+devmin-cli/devmin.exe
+

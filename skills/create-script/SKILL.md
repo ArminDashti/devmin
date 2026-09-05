@@ -1,15 +1,16 @@
 ---
 name: create-script
 description: >-
-  Routes deploy-script authoring for a named GitHub repo into devmin
-  scripts/docker/<repo_name> and scripts/local/<repo_name>.
+  Routes deploy-script authoring for a named GitHub repo into
+  create-ps-script-for-* (devmin-api/deploy/scripts) or legacy create-script-to-*
+  (scripts/docker and scripts/local).
 disable-model-invocation: false
 metadata:
-  version: "1.0.0"
+  version: "1.1.0"
   author: Armin Dashti
   category: devops
-  tags: [devmin, scripts, docker, local, router]
-  last_updated: "2026-09-01 09:45:00"
+  tags: [devmin, scripts, docker, local, cloudflare, router]
+  last_updated: "2026-09-04 13:20:00"
   uuid: a1b2c3d4-e5f6-4789-a012-3456789abcde
 ---
 
@@ -18,68 +19,70 @@ metadata:
 ## When
 
 - User asks to create install/update/remove/reinstall/export/hot-reload scripts for a repo
-- User names `create-script` or any `create-script-to-*` skill under devmin
-- Related: [REFERENCE.md](../REFERENCE.md) for paths; sibling skills under `C:/Users/armin/GitHub/devmin/skills/create-script-to-*/`
+- User names `create-script`, any `create-ps-script-for-*` under `.cursor/skills/`, or any `create-script-to-*` under `skills/`
+- Related: [REFERENCE.md](../REFERENCE.md); `.cursor/skills/create-ps-script-for-*`; `create-script-to-*`
 
 ## How
 
-1. Resolve **repo name** — folder under `C:/Users/armin/GitHub`. If missing, ask once and stop.
+1. Resolve **project / repo name** — folder under `C:/Users/armin/GitHub`. If missing, ask once and stop.
 2. Classify the ask:
 
-| User intent | Skill folder |
-|-------------|--------------|
-| Local Docker install (wipe) | `create-script-to-install-on-docker-local` |
-| Local Docker update | `create-script-to-update-on-docker-local` |
-| Local Docker remove | `create-script-to-remove-on-docker-local` |
-| Local Docker reinstall | `create-script-to-reinstall-on-docker-local` |
-| Server Docker install | `create-script-to-install-on-docker-server` |
-| Server Docker update | `create-script-to-update-on-docker-server` |
-| Server Docker remove | `create-script-to-remove-on-docker-server` |
-| Server Docker reinstall | `create-script-to-reinstall-on-docker-server` |
-| Windows / native install | `create-script-to-install-on-win` or `create-script-for-install-on-local` |
-| Windows reinstall | `create-script-to-reinstall-on-win` |
-| Hot reload runner | `create-script-to-run-as-hot-reload` |
-| Export desktop exe | `create-script-to-export-exe` |
+| User intent | Skill folder | Output root |
+|-------------|--------------|-------------|
+| Full local Windows set (install/remove/update/reinstall) | `.cursor/skills/create-ps-script-for-local-windows` | `devmin-api/deploy/scripts/<project>/` |
+| Full local Docker set | `.cursor/skills/create-ps-script-for-local-docker` | `devmin-api/deploy/scripts/<project>/` |
+| Full Cloudflare set | `.cursor/skills/create-ps-script-for-cloudflare` | `devmin-api/deploy/scripts/<project>/` |
+| Local Docker install (wipe, legacy) | `create-script-to-install-on-docker-local` | `scripts/docker/<repo_name>/` |
+| Local Docker update (legacy) | `create-script-to-update-on-docker-local` | `scripts/docker/<repo_name>/` |
+| Local Docker remove (legacy) | `create-script-to-remove-on-docker-local` | `scripts/docker/<repo_name>/` |
+| Local Docker reinstall (legacy) | `create-script-to-reinstall-on-docker-local` | `scripts/docker/<repo_name>/` |
+| Server Docker install | `create-script-to-install-on-docker-server` | `scripts/docker/<repo_name>/` |
+| Server Docker update | `create-script-to-update-on-docker-server` | `scripts/docker/<repo_name>/` |
+| Server Docker remove | `create-script-to-remove-on-docker-server` | `scripts/docker/<repo_name>/` |
+| Server Docker reinstall | `create-script-to-reinstall-on-docker-server` | `scripts/docker/<repo_name>/` |
+| Windows / native install (legacy single) | `create-script-to-install-on-win` or `create-script-for-install-on-local` | `scripts/local/<repo_name>/` |
+| Windows reinstall (legacy) | `create-script-to-reinstall-on-win` | `scripts/local/<repo_name>/` |
+| Hot reload runner | `create-script-to-run-as-hot-reload` | `scripts/local/<repo_name>/` |
+| Export desktop exe | `create-script-to-export-exe` | `scripts/local/<repo_name>/` |
 
-3. Read and follow the matched skill’s `SKILL.md` fully.
-4. Write outputs only under:
-   - `scripts/docker/<repo_name>/` for Docker channel scripts
-   - `scripts/local/<repo_name>/` for native/local channel scripts
+3. Prefer `create-ps-script-for-*` in `.cursor/skills/` when the user asks for the full channel quartet or names those skills. Read that folder’s `SKILL.md`.
+4. For legacy single-action asks, read `skills/create-script-to-*/SKILL.md`.
+5. For `create-ps-script-for-*`, also upsert `devmin-api/deploy/status.md`.
 
 ## Always
 
-1. Ask for `repo_name` when the user did not name the target repo.
-2. Keep Dockerfile and compose in the **target** repo; store PowerShell + YAML pairs in devmin `scripts/`.
+1. Ask for project/repo name when the user did not name it.
+2. Keep Dockerfile and compose in the **target** repo.
 3. Set YAML `target_repo` to the absolute target path.
 
 ## Never
 
-1. Write deploy scripts into `.armin/scripts/` on the target repo (legacy — use devmin `scripts/` instead).
+1. Write `create-ps-script-for-*` outputs into legacy `scripts/docker/` or `scripts/local/`.
 2. Invent `stack_name` without user confirmation.
 
 ## Example
 
-**Example 1 — Docker local install**
+**Example 1 — Preferred local Docker full set**
 
-- Input: “Create local Docker install scripts for radar-api”
-- Output: route → `create-script-to-install-on-docker-local` → `devmin/scripts/docker/radar-api/install-on-docker-local.ps1` + `.yaml`
+- Input: “Create local Docker scripts for asip”
+- Output: route → `create-ps-script-for-local-docker` → `devmin-api/deploy/scripts/asip/`
 
-**Example 2 — Missing repo**
+**Example 2 — Missing project**
 
 - Input: “Create update scripts”
-- Output: ask which `repo_name` under `C:/Users/armin/GitHub`
+- Output: ask which project under `C:/Users/armin/GitHub`
 
-**Example 3 — Wrong channel**
+**Example 3 — Cloudflare**
 
-- Input: “Server Docker install for helix-api”
-- Output: route → `create-script-to-install-on-docker-server`
+- Input: “Cloudflare scripts for asip”
+- Output: route → `create-ps-script-for-cloudflare`
 
-**Example 4 — Native Windows**
+**Example 4 — Legacy single docker install**
 
-- Input: “Install script for my Windows app in parkiroid”
-- Output: route → `create-script-to-install-on-win` → `scripts/local/parkiroid/`
+- Input: “Create wipe install-on-docker-local for radar-api”
+- Output: route → `create-script-to-install-on-docker-local` → `scripts/docker/radar-api/`
 
-**Example 5 — Full set**
+**Example 5 — Local Windows full set**
 
-- Input: “All docker scripts for devmin”
-- Output: run install/update/remove/reinstall for local and server into `scripts/docker/devmin/`
+- Input: “create-ps-script-for-local-windows for devmin”
+- Output: eight files under `devmin-api/deploy/scripts/devmin/` + status.md row

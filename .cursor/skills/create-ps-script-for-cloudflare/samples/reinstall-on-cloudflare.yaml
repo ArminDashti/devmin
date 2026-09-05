@@ -1,0 +1,11 @@
+target_repo: C:/Users/armin/GitHub/<project>
+api_worker_root: <api>/cloudflare
+api_worker_name: <api-worker>
+webui_worker_root: <webui>
+webui_worker_name: <webui-worker>
+d1_database_name: <d1-name>
+d1_database_id: <d1-id>
+api_url: https://<api-worker>.armindashti.workers.dev
+webui_url: https://<webui-worker>.armindashti.workers.dev
+workers_dev_suffix: armindashti.workers.dev
+webui_build_command: npm run build
